@@ -117,11 +117,15 @@ export default function AICreateDialog({ open, onClose }: Props) {
       setUploadState("saving")
 
       // Step 2: Save as custom template
-      await fetch("/api/templates", {
+      const saveRes = await fetch("/api/templates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, category, variables, folder: folder ?? category ?? "ทั่วไป" }),
       })
+      if (!saveRes.ok) {
+        const err = await saveRes.json().catch(() => ({}))
+        throw new Error(err.error ?? "บันทึก Template ไม่สำเร็จ")
+      }
 
       setUploadState("done")
       setTimeout(() => { router.push("/templates?section=my"); onClose() }, 600)

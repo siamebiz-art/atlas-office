@@ -10,10 +10,6 @@ export const metadata: Metadata = {
     template: "%s | ATLAS Office™",
   },
   description: "AI Productivity Operating System — สร้างเอกสาร ตาราง สไลด์ และจัดการไฟล์ด้วย AI",
-  icons: {
-    icon: "/iconLogoOffice.png",
-    apple: "/iconLogoOffice.png",
-  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

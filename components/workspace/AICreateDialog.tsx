@@ -92,15 +92,24 @@ export default function AICreateDialog({ open, onClose }: Props) {
   }
 
   async function handleUpload(file: File) {
-    // Navigate to templates and trigger upload
-    router.push("/templates")
-    onClose()
-    // Store pending file in sessionStorage for templates page to pick up
+    const ext = file.name.split(".").pop()?.toLowerCase()
+    const isPdf = ext === "pdf"
+    const dest = isPdf ? "/pdf" : "/documents"
+
+    // Store file metadata so destination page can show upload UI
     if (typeof window !== "undefined") {
-      const dt = new DataTransfer()
-      dt.items.add(file)
-      sessionStorage.setItem("pendingUpload", file.name)
+      sessionStorage.setItem("pendingUploadName", file.name)
+      sessionStorage.setItem("pendingUploadType", ext ?? "")
     }
+
+    // Convert file to base64 and store for destination page
+    const reader = new FileReader()
+    reader.onload = () => {
+      try { sessionStorage.setItem("pendingUploadData", reader.result as string) } catch {}
+      router.push(dest)
+      onClose()
+    }
+    reader.readAsDataURL(file)
   }
 
   function handleGenerate() {

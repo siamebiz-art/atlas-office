@@ -24,17 +24,36 @@ export default function PDFPage() {
 
   useEffect(() => { loadFiles() }, [loadFiles])
 
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file || file.type !== "application/pdf") return
-    setUploading(true)
+  // Auto-upload from AICreateDialog "Upload & Learn"
+  useEffect(() => {
+    const data = sessionStorage.getItem("pendingUploadData")
+    const name = sessionStorage.getItem("pendingUploadName")
+    if (!data || !name) return
+    sessionStorage.removeItem("pendingUploadData")
+    sessionStorage.removeItem("pendingUploadName")
+    sessionStorage.removeItem("pendingUploadType")
 
+    // Convert base64 back to File
+    fetch(data).then(r => r.blob()).then(blob => {
+      const file = new File([blob], name, { type: "application/pdf" })
+      uploadFile(file)
+    })
+  }, [])
+
+  async function uploadFile(file: File) {
+    setUploading(true)
     const formData = new FormData()
     formData.append("file", file)
     const res = await fetch("/api/files/upload", { method: "POST", body: formData })
     const { fileItem } = await res.json()
     if (fileItem) setFiles(prev => [fileItem, ...prev])
     setUploading(false)
+  }
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || file.type !== "application/pdf") return
+    await uploadFile(file)
     e.target.value = ""
   }
 

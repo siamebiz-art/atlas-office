@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server"
 
 const PROTECTED = ["/home", "/documents", "/sheets", "/slides", "/pdf", "/files", "/search", "/knowledge", "/automation", "/templates", "/settings"]
 
-export default function proxy(request: NextRequest) {
+export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   const isAuthPage = pathname.startsWith("/sign-in") || pathname.startsWith("/sign-up")

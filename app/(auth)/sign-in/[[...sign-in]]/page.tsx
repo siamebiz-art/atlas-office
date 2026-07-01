@@ -27,7 +27,7 @@ export default function SignInPage() {
       setError(error.message)
       setLoading(false)
     } else {
-      router.push("/documents")
+      router.push("/home")
     }
   }
 

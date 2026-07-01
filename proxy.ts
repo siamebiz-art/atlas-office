@@ -1,42 +1,28 @@
-import { createServerClient } from "@supabase/ssr"
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 
 const PROTECTED = ["/home", "/documents", "/sheets", "/slides", "/pdf", "/files", "/search", "/knowledge", "/automation", "/templates", "/settings"]
 
-export async function proxy(request: NextRequest) {
-  let response = NextResponse.next({ request })
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() { return request.cookies.getAll() },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-          response = NextResponse.next({ request })
-          cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options))
-        },
-      },
-    }
-  )
-
-  const { data: { user } } = await supabase.auth.getUser()
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   const isAuthPage = pathname.startsWith("/sign-in") || pathname.startsWith("/sign-up")
   const isProtected = pathname === "/" || PROTECTED.some(p => pathname === p || pathname.startsWith(p + "/"))
 
-  if (!user && isProtected) {
+  // Optimistic check — read session cookie set by Supabase
+  const hasSession = request.cookies.has("sb-whhreuhreqjhdimlxigr-auth-token") ||
+                     request.cookies.has("sb-access-token") ||
+                     [...request.cookies.getAll()].some(c => c.name.startsWith("sb-") && c.name.endsWith("-auth-token"))
+
+  if (!hasSession && isProtected) {
     return NextResponse.redirect(new URL("/sign-in", request.url))
   }
 
-  if (user && isAuthPage) {
+  if (hasSession && isAuthPage) {
     return NextResponse.redirect(new URL("/home", request.url))
   }
 
-  return response
+  return NextResponse.next()
 }
 
 export const config = {

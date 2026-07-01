@@ -1,3 +1,7 @@
+import { redirect } from "next/navigation"
+
+export const dynamic = "force-dynamic"
+
 export default function Home() {
-  return <div style={{ padding: 40, fontFamily: "sans-serif" }}>ATLAS Office — OK</div>
+  redirect("/sign-in")
 }

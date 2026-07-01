@@ -18,12 +18,14 @@ export async function POST(req: NextRequest) {
 ระบุ:
 1. ชื่อเอกสาร (ภาษาไทย)
 2. หมวดหมู่: sales | hr | finance | government | legal | general
-3. ตัวแปรที่เปลี่ยนได้ (ชื่อ วันที่ จำนวนเงิน บริษัท ฯลฯ) โดยเฉพาะข้อมูลที่จะเปลี่ยนในแต่ละครั้ง
+3. ชื่อ Folder แนะนำ (ภาษาไทย) สำหรับจัดเก็บ template นี้ เช่น "งานขาย", "HR", "บัญชีการเงิน", "ราชการ", "กฎหมาย", "รายงานโครงการ"
+4. ตัวแปรที่เปลี่ยนได้ (ชื่อ วันที่ จำนวนเงิน บริษัท ฯลฯ) โดยเฉพาะข้อมูลที่จะเปลี่ยนในแต่ละครั้ง
 
 ตอบเป็น JSON เท่านั้น:
 {
   "name": "ชื่อเอกสาร",
   "category": "sales|hr|finance|government|legal|general",
+  "folder": "ชื่อ Folder ภาษาไทย",
   "variables": [
     {"key": "VariableName", "label": "ชื่อภาษาไทย", "placeholder": "ตัวอย่าง", "multiline": false, "required": true}
   ]
@@ -68,7 +70,12 @@ export async function POST(req: NextRequest) {
     const match = text.match(/\{[\s\S]*\}/)
     if (match) {
       const parsed = JSON.parse(match[0])
-      return NextResponse.json({ name: parsed.name, category: parsed.category, variables: parsed.variables ?? [] })
+      return NextResponse.json({
+        name: parsed.name,
+        category: parsed.category,
+        folder: parsed.folder ?? parsed.category ?? "ทั่วไป",
+        variables: parsed.variables ?? [],
+      })
     }
   } catch { /* fall through */ }
 

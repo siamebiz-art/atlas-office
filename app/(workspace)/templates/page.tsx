@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Upload, X, Sparkles, ChevronRight, Trash2, Bot, FileText, Search } from "lucide-react"
+import { Upload, X, Sparkles, ChevronRight, Trash2, Bot, FileText, Search, FolderOpen, FolderPlus, Check, MoreHorizontal } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import AILoadingDots from "@/components/shared/AILoadingDots"
 
@@ -13,7 +13,7 @@ type Template = {
   icon: string; color: string; desc: string; vars: TVar[]
 }
 type CustomTemplate = {
-  id: string; name: string; category: string
+  id: string; name: string; category: string; folder: string
   variables: TVar[]; created_at: string
 }
 
@@ -85,7 +85,6 @@ const TEMPLATES: Template[] = [
       { key: "Outcome", label: "ผลลัพธ์", multiline: true, required: true },
       { key: "NextAction", label: "ขั้นตอนถัดไป", multiline: true },
     ]},
-
   // ─ HR ─
   { id: "employment-contract", name: "สัญญาจ้างงาน", nameEn: "Employment Contract", cat: "hr", icon: "📋", color: "#10b981", desc: "สัญญาระหว่างนายจ้างและลูกจ้าง",
     vars: [
@@ -158,7 +157,6 @@ const TEMPLATES: Template[] = [
       { key: "Content", label: "หัวข้อเนื้อหา", multiline: true, required: true },
       { key: "Budget", label: "งบประมาณ" },
     ]},
-
   // ─ Finance ─
   { id: "expense-report", name: "รายงานค่าใช้จ่าย", nameEn: "Expense Report", cat: "accounting", icon: "💰", color: "#f59e0b", desc: "รายงานค่าใช้จ่ายเพื่อเบิกคืน",
     vars: [
@@ -205,7 +203,6 @@ const TEMPLATES: Template[] = [
       { key: "TotalOutflow", label: "รวมเงินสดจ่าย", required: true },
       { key: "ClosingBalance", label: "ยอดยกไปสิ้นงวด", required: true },
     ]},
-
   // ─ Government ─
   { id: "internal-memo", name: "บันทึกข้อความ", nameEn: "Internal Memo", cat: "government", icon: "📝", color: "#8b5cf6", desc: "หนังสือภายในหน่วยงาน",
     vars: [
@@ -260,7 +257,6 @@ const TEMPLATES: Template[] = [
       { key: "Venue", label: "สถานที่", required: true },
       { key: "AgendaItems", label: "วาระการประชุม", multiline: true, required: true, placeholder: "1. เรื่องแจ้งเพื่อทราบ\n2. เรื่องเพื่อพิจารณา\n3. เรื่องอื่นๆ" },
     ]},
-
   // ─ Legal ─
   { id: "nda", name: "สัญญาห้ามเปิดเผย (NDA)", nameEn: "NDA", cat: "legal", icon: "🔒", color: "#ef4444", desc: "Non-Disclosure Agreement",
     vars: [
@@ -308,7 +304,6 @@ const TEMPLATES: Template[] = [
       { key: "Duration", label: "ระยะเวลา", required: true },
       { key: "Date", label: "วันที่ลงนาม", required: true },
     ]},
-
   // ─ General ─
   { id: "project-proposal", name: "ข้อเสนอโครงการ", nameEn: "Project Proposal", cat: "company", icon: "🚀", color: "#06b6d4", desc: "เสนอโครงการพร้อมแผนและงบ",
     vars: [
@@ -367,15 +362,6 @@ const TEMPLATES: Template[] = [
       { key: "Strengths", label: "จุดเด่น/ความสามารถ", multiline: true, required: true },
       { key: "Recommendation", label: "ข้อเสนอแนะ", multiline: true, required: true },
     ]},
-  { id: "emergency-plan", name: "แผนฉุกเฉิน", nameEn: "Emergency Plan", cat: "company", icon: "🚨", color: "#06b6d4", desc: "แผนรับมือเหตุฉุกเฉิน",
-    vars: [
-      { key: "Scenario", label: "สถานการณ์ฉุกเฉิน", required: true, placeholder: "ไฟไหม้ / น้ำท่วม / ระบบล่ม" },
-      { key: "Scope", label: "ขอบเขตที่ได้รับผลกระทบ", multiline: true, required: true },
-      { key: "ResponseTeam", label: "ทีมรับมือ", multiline: true, required: true },
-      { key: "ImmediateActions", label: "การดำเนินการทันที", multiline: true, required: true },
-      { key: "RecoveryPlan", label: "แผนฟื้นฟู", multiline: true, required: true },
-      { key: "Contacts", label: "ผู้ติดต่อฉุกเฉิน", multiline: true, required: true },
-    ]},
   { id: "handover", name: "บันทึกส่งมอบงาน", nameEn: "Work Handover", cat: "company", icon: "🔄", color: "#06b6d4", desc: "ส่งมอบงานระหว่างผู้รับผิดชอบ",
     vars: [
       { key: "FromPerson", label: "ผู้ส่งมอบ", required: true },
@@ -397,17 +383,20 @@ const CATS = [
   { id: "government",  label: "ราชการ",    emoji: "🏛",  comingSoon: false },
   { id: "legal",       label: "กฎหมาย",   emoji: "⚖️",  comingSoon: false },
   { id: "marketing",   label: "การตลาด",  emoji: "📈",  comingSoon: false },
-  { id: "healthcare",  label: "สุขภาพ",   emoji: "🏥",  comingSoon: true  },
-  { id: "education",   label: "การศึกษา", emoji: "🎓",  comingSoon: true  },
-  { id: "marketplace", label: "Marketplace",emoji: "🛒", comingSoon: true  },
 ]
 
 const RECOMMENDED_IDS = ["quotation", "invoice", "internal-memo", "employment-contract", "meeting-minutes", "business-plan", "nda", "expense-report"]
+
+// ── My Templates Folder Colors ──────────────────────────────────────────
+const FOLDER_COLORS = ["#6366f1","#10b981","#f59e0b","#ef4444","#8b5cf6","#06b6d4","#ec4899","#f97316"]
+function folderColor(name: string) { return FOLDER_COLORS[Math.abs(name.split("").reduce((a, c) => a + c.charCodeAt(0), 0)) % FOLDER_COLORS.length] }
 
 // ── Component ─────────────────────────────────────────────────────────
 function TemplatesPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const section = searchParams.get("section") // "my" | null
+  const [tab, setTab] = useState<"builtin" | "my">(section === "my" ? "my" : "builtin")
   const [filter, setFilter] = useState("all")
   const [search, setSearch] = useState("")
   const [selected, setSelected] = useState<Template | null>(null)
@@ -417,11 +406,17 @@ function TemplatesPage() {
   const [analyzing, setAnalyzing] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [customTemplates, setCustomTemplates] = useState<CustomTemplate[]>([])
+  const [activeFolder, setActiveFolder] = useState<string | null>(null)
+  const [movingId, setMovingId] = useState<string | null>(null)
+  const [moveTarget, setMoveTarget] = useState("")
+  const [newFolderMode, setNewFolderMode] = useState(false)
+  const [newFolderName, setNewFolderName] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { loadCustomTemplates() }, [])
+  useEffect(() => { if (section === "my") setTab("my") }, [section])
 
-  // Auto-open template from ?open= param (e.g. from AICreateDialog)
+  // Auto-open template from ?open= param
   useEffect(() => {
     const openId = searchParams.get("open")
     if (openId) {
@@ -433,27 +428,30 @@ function TemplatesPage() {
   async function loadCustomTemplates() {
     try {
       const res = await fetch("/api/templates")
-      if (res.ok) setCustomTemplates(await res.json())
+      if (res.ok) {
+        const data = await res.json()
+        setCustomTemplates(data.map((t: CustomTemplate) => ({ ...t, folder: t.folder ?? "ทั่วไป" })))
+      }
     } catch { /* not critical */ }
   }
 
   async function handleFile(file: File) {
     const okExt = /\.(pdf|docx|doc)$/i.test(file.name)
-    const okType = ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/msword"].includes(file.type)
-    if (!okExt && !okType) { alert("รองรับเฉพาะไฟล์ PDF และ DOCX เท่านั้น"); return }
+    if (!okExt) { alert("รองรับเฉพาะไฟล์ PDF และ DOCX เท่านั้น"); return }
     setAnalyzing(true)
     try {
       const fd = new FormData()
       fd.append("file", file)
       const res = await fetch("/api/ai/templates/analyze", { method: "POST", body: fd })
       if (!res.ok) throw new Error()
-      const { name, category, variables } = await res.json()
+      const { name, category, variables, folder } = await res.json()
       await fetch("/api/templates", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, category, variables }),
+        body: JSON.stringify({ name, category, variables, folder: folder ?? "ทั่วไป" }),
       })
       await loadCustomTemplates()
-      alert(`✅ สร้าง Template "${name}" เรียบร้อยแล้ว`)
+      setTab("my")
+      setActiveFolder(null)
     } catch {
       alert("ไม่สามารถวิเคราะห์ไฟล์ได้ กรุณาลองใหม่")
     } finally { setAnalyzing(false) }
@@ -498,9 +496,25 @@ function TemplatesPage() {
     setCustomTemplates(prev => prev.filter(t => t.id !== id))
   }
 
-  const activeCat = CATS.find(c => c.id === filter)
-  const isComingSoon = activeCat?.comingSoon ?? false
+  async function moveToFolder(id: string, folder: string) {
+    await fetch("/api/templates", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, folder }),
+    })
+    setCustomTemplates(prev => prev.map(t => t.id === id ? { ...t, folder } : t))
+    setMovingId(null)
+    setMoveTarget("")
+  }
 
+  // Derived: folders from custom templates
+  const allFolders = Array.from(new Set(customTemplates.map(t => t.folder ?? "ทั่วไป"))).sort()
+  const templatesInFolder = activeFolder
+    ? customTemplates.filter(t => (t.folder ?? "ทั่วไป") === activeFolder)
+    : customTemplates
+
+  const activeCat = CATS.find(c => c.id === filter)
+  const isComingSoon = false
   const filtered = TEMPLATES.filter(t => {
     if (filter === "recommended") return RECOMMENDED_IDS.includes(t.id)
     if (filter !== "all" && t.cat !== filter) return false
@@ -519,198 +533,308 @@ function TemplatesPage() {
 
   return (
     <div>
-      {/* ── AI Document Intelligence Hero ── */}
-      <div style={{
-        background: "linear-gradient(135deg, rgba(99,102,241,0.1) 0%, rgba(139,92,246,0.06) 100%)",
-        border: "1px solid rgba(99,102,241,0.2)", borderRadius: 20, padding: "28px 32px",
-        marginBottom: 32, position: "relative", overflow: "hidden",
-      }}>
-        <div style={{ position: "absolute", top: -50, right: -50, width: 220, height: 220, background: "rgba(99,102,241,0.05)", borderRadius: "50%", pointerEvents: "none" }} />
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 28, position: "relative" }}>
-          {/* Left */}
-          <div style={{ flex: 1 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-              <Bot size={22} color="#818cf8" />
-              <h1 style={{ fontSize: 20, fontWeight: 800, color: "var(--tx-main)", margin: 0 }}>AI Document Intelligence™</h1>
-              <span style={{ fontSize: 11, fontWeight: 700, color: "#818cf8", background: "rgba(99,102,241,0.15)", padding: "2px 8px", borderRadius: 20 }}>⭐ Killer Feature</span>
-            </div>
-            <p style={{ color: "var(--tx-dim)", fontSize: 14, margin: "0 0 20px", lineHeight: 1.7 }}>
-              อัปโหลดเอกสารที่ใช้งานอยู่ (DOCX / PDF) — AI วิเคราะห์โครงสร้าง ตรวจจับตัวแปร และสร้าง Template อัตโนมัติ<br />
-              ไม่ต้องสร้างเอง แค่อัปโหลด ATLAS จะเรียนรู้จากเอกสารจริงของคุณ
-            </p>
-            {/* Drop zone */}
-            <div
-              onDragOver={e => { e.preventDefault(); setDragOver(true) }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f) }}
-              onClick={() => fileInputRef.current?.click()}
-              style={{
-                border: `2px dashed ${dragOver ? "#818cf8" : "rgba(99,102,241,0.3)"}`,
-                borderRadius: 14, padding: "24px 20px", textAlign: "center", cursor: "pointer",
-                background: dragOver ? "rgba(99,102,241,0.1)" : "rgba(99,102,241,0.03)",
-                transition: "all .15s",
-              }}
-            >
-              {analyzing ? <AILoadingDots label="AI กำลังวิเคราะห์เอกสาร…" /> : (
-                <>
-                  <Upload size={28} color="#818cf8" style={{ marginBottom: 8 }} />
-                  <div style={{ fontWeight: 600, color: "var(--tx-primary)", marginBottom: 4 }}>ลากไฟล์มาวางที่นี่ หรือคลิกเพื่อเลือก</div>
-                  <div style={{ fontSize: 12, color: "var(--tx-faint)" }}>รองรับ PDF และ DOCX • ความลับของคุณปลอดภัย</div>
-                </>
-              )}
-            </div>
-            <input ref={fileInputRef} type="file" accept=".pdf,.docx,.doc" style={{ display: "none" }}
-              onChange={e => { const f = e.target.files?.[0]; if (f) { handleFile(f); e.target.value = "" } }} />
-          </div>
-          {/* Stats */}
-          <div style={{ minWidth: 160, flexShrink: 0 }}>
-            <div style={{ background: "rgba(99,102,241,0.08)", borderRadius: 14, padding: "18px 20px" }}>
-              <div style={{ fontSize: 11, color: "var(--tx-faint)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.05em" }}>Template Library</div>
-              <div style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 34, fontWeight: 800, color: "#818cf8", lineHeight: 1 }}>{TEMPLATES.length}</div>
-                <div style={{ fontSize: 12, color: "var(--tx-dim)" }}>Built-in Templates</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 26, fontWeight: 700, color: customTemplates.length > 0 ? "#a78bfa" : "var(--tx-faint)", lineHeight: 1 }}>{customTemplates.length}</div>
-                <div style={{ fontSize: 12, color: "var(--tx-dim)" }}>Custom (อัปโหลด)</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Search + Tabs ── */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 22, flexWrap: "wrap" }}>
-        <div style={{ position: "relative", flex: "0 0 220px" }}>
-          <Search size={13} color="var(--tx-faint)" style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }} />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา template…"
-            style={{ ...inputSt, paddingLeft: 30 }}
-            onFocus={e => e.target.style.borderColor = "rgba(99,102,241,0.5)"}
-            onBlur={e => e.target.style.borderColor = "var(--bg-border)"} />
-        </div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {CATS.map(c => (
-            <button key={c.id} onClick={() => setFilter(c.id)}
-              style={{
-                padding: "6px 14px", borderRadius: 20, border: "1px solid",
-                borderColor: filter === c.id ? "#6366f1" : "var(--bg-border)",
-                background: filter === c.id ? "rgba(99,102,241,0.12)" : "var(--bg-card)",
-                color: filter === c.id ? "#a5b4fc" : c.comingSoon ? "var(--tx-faint)" : "var(--tx-muted)",
-                fontSize: 13, cursor: "pointer", fontWeight: filter === c.id ? 600 : 400, transition: ".1s",
-                opacity: c.comingSoon ? 0.6 : 1,
-              }}>
-              {c.emoji} {c.label}{c.comingSoon ? " 🔒" : ""}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Custom Templates (from uploads) ── */}
-      {customTemplates.length > 0 && (
-        <div style={{ marginBottom: 28 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-            <Sparkles size={14} color="#818cf8" />
-            <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--tx-primary)", margin: 0 }}>Templates ที่เรียนรู้จากเอกสารของคุณ</h2>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 10 }}>
-            {customTemplates.map(t => (
-              <div key={t.id} onClick={() => openCustomTemplate(t)}
-                style={{
-                  background: "linear-gradient(135deg, rgba(99,102,241,0.08), rgba(139,92,246,0.04))",
-                  border: "1px solid rgba(99,102,241,0.2)", borderRadius: 13, padding: "14px 16px",
-                  cursor: "pointer", position: "relative", transition: "border-color .15s",
-                }}
-                onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.borderColor = "rgba(99,102,241,0.45)"}
-                onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.borderColor = "rgba(99,102,241,0.2)"}>
-                <div style={{ fontSize: 18, marginBottom: 6 }}>🧩</div>
-                <div style={{ fontWeight: 700, color: "var(--tx-primary)", fontSize: 14, marginBottom: 4 }}>{t.name}</div>
-                <div style={{ fontSize: 11, color: "var(--tx-faint)", marginBottom: 10 }}>
-                  {t.variables?.length ?? 0} ตัวแปร • {t.category}
-                </div>
-                <button onClick={e => deleteCustom(t.id, e)}
-                  style={{ position: "absolute", top: 10, right: 10, width: 22, height: 22, borderRadius: 6, background: "rgba(239,68,68,0.1)", border: "none", color: "#f87171", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <Trash2 size={10} />
-                </button>
-                <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#818cf8", fontWeight: 600 }}>
-                  ใช้ <ChevronRight size={11} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── Coming Soon state ── */}
-      {isComingSoon && (
-        <div style={{ textAlign: "center", padding: "60px 20px", border: "1px dashed var(--bg-border)", borderRadius: 16 }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>{activeCat?.emoji}</div>
-          <div style={{ fontWeight: 700, color: "var(--tx-primary)", fontSize: 16, marginBottom: 8 }}>
-            {activeCat?.label} Templates — เร็วๆ นี้
-          </div>
-          <div style={{ color: "var(--tx-faint)", fontSize: 13, marginBottom: 20 }}>
-            กำลังพัฒนา Templates สำหรับหมวดนี้อยู่ ติดตามอัปเดตได้เร็วๆ นี้
-          </div>
-          <button onClick={() => setFilter("all")}
-            style={{ padding: "9px 20px", background: "linear-gradient(135deg,#6366f1,#8b5cf6)", border: "none", borderRadius: 10, color: "#fff", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
-            ดู Templates ทั้งหมด
+      {/* ── Tab Header ─────────────────────────────────────────────── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 24, borderBottom: "1px solid var(--bg-border)" }}>
+        {[
+          { id: "builtin", label: `📚 Template Library (${TEMPLATES.length})` },
+          { id: "my",      label: `🧩 My Templates${customTemplates.length > 0 ? ` (${customTemplates.length})` : ""}` },
+        ].map(t => (
+          <button key={t.id} onClick={() => setTab(t.id as "builtin" | "my")}
+            style={{
+              padding: "10px 20px", background: "none", border: "none",
+              borderBottom: tab === t.id ? "2px solid #6366f1" : "2px solid transparent",
+              color: tab === t.id ? "#a5b4fc" : "var(--tx-muted)",
+              fontWeight: tab === t.id ? 700 : 500, fontSize: 14, cursor: "pointer",
+              transition: "all .15s", marginBottom: -1,
+            }}>
+            {t.label}
           </button>
-        </div>
-      )}
+        ))}
+      </div>
 
-      {/* ── Built-in grid ── */}
-      {!isComingSoon && <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-        <FileText size={14} color="var(--tx-dim)" />
-        <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--tx-primary)", margin: 0 }}>
-          {filter === "all" ? `Built-in Templates (${filtered.length})` :
-           filter === "recommended" ? `⭐ แนะนำสำหรับคุณ (${filtered.length})` :
-           `${activeCat?.emoji} ${activeCat?.label} (${filtered.length})`}
-        </h2>
-      </div>}
-
-      {!isComingSoon && filtered.length === 0 && (
-        <div style={{ textAlign: "center", padding: "60px 20px", color: "var(--tx-faint)" }}>
-          <FileText size={36} style={{ marginBottom: 12 }} />
-          <div>ไม่พบ Template ที่ตรงกับการค้นหา</div>
-        </div>
-      )}
-
-      {!isComingSoon && filtered.length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(234px, 1fr))", gap: 10 }}>
-          {filtered.map(t => (
-            <div key={t.id} onClick={() => openTemplate(t)}
-              style={{
-                background: "var(--bg-card)", border: "1px solid var(--bg-border)", borderRadius: 14,
-                padding: "16px 16px 12px", cursor: "pointer", transition: "border-color .15s, transform .1s",
-              }}
-              onMouseEnter={e => { const el = e.currentTarget as HTMLDivElement; el.style.borderColor = t.color + "55"; el.style.transform = "translateY(-1px)" }}
-              onMouseLeave={e => { const el = e.currentTarget as HTMLDivElement; el.style.borderColor = "var(--bg-border)"; el.style.transform = "" }}>
-              <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
-                <div style={{ width: 34, height: 34, borderRadius: 9, background: t.color + "18", border: `1px solid ${t.color}28`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }}>
-                  {t.icon}
+      {/* ══════════════════════════════════════════════════════════════
+          MY TEMPLATES TAB
+      ══════════════════════════════════════════════════════════════ */}
+      {tab === "my" && (
+        <div>
+          {/* Hero upload */}
+          <div style={{ background: "linear-gradient(135deg, rgba(99,102,241,0.08), rgba(139,92,246,0.04))", border: "1px solid rgba(99,102,241,0.15)", borderRadius: 16, padding: "20px 24px", marginBottom: 24 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+              <div style={{ flex: 1, minWidth: 240 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <Bot size={18} color="#818cf8" />
+                  <span style={{ fontWeight: 800, color: "var(--tx-primary)", fontSize: 15 }}>AI Document Intelligence™</span>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: "#818cf8", background: "rgba(99,102,241,0.15)", padding: "2px 8px", borderRadius: 20 }}>⭐ Killer Feature</span>
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, color: "var(--tx-primary)", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</div>
-                  <div style={{ fontSize: 11, color: "var(--tx-faint)" }}>{t.nameEn}</div>
-                </div>
+                <p style={{ color: "var(--tx-dim)", fontSize: 13, margin: 0, lineHeight: 1.6 }}>
+                  อัปโหลด DOCX / PDF — AI วิเคราะห์โครงสร้าง ตรวจจับตัวแปร และสร้าง Template พร้อมจัด Folder อัตโนมัติ
+                </p>
               </div>
-              <div style={{ fontSize: 12, color: "var(--tx-dim)", marginBottom: 10, lineHeight: 1.5 }}>{t.desc}</div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span style={{ fontSize: 11, color: "var(--tx-faint)" }}>{t.vars.length} ตัวแปร</span>
-                <span style={{ fontSize: 12, color: t.color, fontWeight: 600, display: "flex", alignItems: "center", gap: 3 }}>
-                  ใช้ <ChevronRight size={11} />
-                </span>
+              {/* Upload zone */}
+              <div
+                onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f) }}
+                onClick={() => fileInputRef.current?.click()}
+                style={{
+                  minWidth: 200, border: `2px dashed ${dragOver ? "#818cf8" : "rgba(99,102,241,0.3)"}`,
+                  borderRadius: 12, padding: "16px 20px", textAlign: "center", cursor: "pointer",
+                  background: dragOver ? "rgba(99,102,241,0.08)" : "transparent", transition: "all .15s",
+                }}>
+                {analyzing ? <AILoadingDots label="AI กำลังวิเคราะห์…" /> : (
+                  <>
+                    <Upload size={22} color="#818cf8" style={{ marginBottom: 6 }} />
+                    <div style={{ fontWeight: 600, color: "var(--tx-primary)", fontSize: 13, marginBottom: 2 }}>วางไฟล์หรือคลิกอัปโหลด</div>
+                    <div style={{ fontSize: 11, color: "var(--tx-faint)" }}>PDF · DOCX</div>
+                  </>
+                )}
               </div>
             </div>
-          ))}
+          </div>
+          <input ref={fileInputRef} type="file" accept=".pdf,.docx,.doc" style={{ display: "none" }}
+            onChange={e => { const f = e.target.files?.[0]; if (f) { handleFile(f); e.target.value = "" } }} />
+
+          {/* No templates yet */}
+          {customTemplates.length === 0 && (
+            <div style={{ textAlign: "center", padding: "60px 20px", border: "1px dashed rgba(99,102,241,0.2)", borderRadius: 16 }}>
+              <FolderOpen size={44} color="var(--tx-faint)" style={{ marginBottom: 14 }} />
+              <div style={{ fontWeight: 700, color: "var(--tx-muted)", fontSize: 16, marginBottom: 8 }}>ยังไม่มี Template ของคุณ</div>
+              <div style={{ color: "var(--tx-faint)", fontSize: 13, marginBottom: 20 }}>
+                อัปโหลดเอกสารที่ใช้งานอยู่ แล้ว AI จะสร้าง Template และจัด Folder ให้อัตโนมัติ
+              </div>
+              <button onClick={() => fileInputRef.current?.click()}
+                style={{ padding: "10px 22px", background: "linear-gradient(135deg,#6366f1,#8b5cf6)", border: "none", borderRadius: 10, color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <Upload size={14} /> อัปโหลดเอกสาร
+              </button>
+            </div>
+          )}
+
+          {/* Folders + Templates */}
+          {customTemplates.length > 0 && (
+            <div style={{ display: "flex", gap: 20 }}>
+              {/* Folder sidebar */}
+              <div style={{ width: 200, flexShrink: 0 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--tx-faint)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>Folders</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                  <button onClick={() => setActiveFolder(null)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: 8,
+                      background: activeFolder === null ? "rgba(99,102,241,0.12)" : "transparent",
+                      border: `1px solid ${activeFolder === null ? "rgba(99,102,241,0.3)" : "transparent"}`,
+                      color: activeFolder === null ? "#a5b4fc" : "var(--tx-muted)",
+                      fontWeight: activeFolder === null ? 700 : 500, fontSize: 13, cursor: "pointer", textAlign: "left",
+                    }}>
+                    <FolderOpen size={14} color={activeFolder === null ? "#6366f1" : "var(--tx-dim)"} />
+                    ทั้งหมด
+                    <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--tx-faint)" }}>{customTemplates.length}</span>
+                  </button>
+
+                  {allFolders.map(folder => {
+                    const count = customTemplates.filter(t => (t.folder ?? "ทั่วไป") === folder).length
+                    const color = folderColor(folder)
+                    const isActive = activeFolder === folder
+                    return (
+                      <button key={folder} onClick={() => setActiveFolder(isActive ? null : folder)}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: 8,
+                          background: isActive ? `${color}14` : "transparent",
+                          border: `1px solid ${isActive ? `${color}35` : "transparent"}`,
+                          color: isActive ? color : "var(--tx-muted)",
+                          fontWeight: isActive ? 700 : 500, fontSize: 13, cursor: "pointer", textAlign: "left",
+                          transition: "all .15s",
+                        }}
+                        onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "var(--bg-card-hover)" }}
+                        onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent" }}>
+                        <div style={{ width: 8, height: 8, borderRadius: 2, background: color, flexShrink: 0 }} />
+                        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{folder}</span>
+                        <span style={{ fontSize: 11, color: "var(--tx-faint)", flexShrink: 0 }}>{count}</span>
+                      </button>
+                    )
+                  })}
+
+                  {/* New folder */}
+                  {newFolderMode ? (
+                    <div style={{ display: "flex", gap: 4, padding: "4px 4px" }}>
+                      <input
+                        autoFocus
+                        value={newFolderName}
+                        onChange={e => setNewFolderName(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === "Enter" && newFolderName.trim()) { setActiveFolder(newFolderName.trim()); setNewFolderMode(false); setNewFolderName("") }
+                          if (e.key === "Escape") { setNewFolderMode(false); setNewFolderName("") }
+                        }}
+                        placeholder="ชื่อ Folder"
+                        style={{ flex: 1, background: "var(--bg-input)", border: "1px solid rgba(99,102,241,0.3)", borderRadius: 6, padding: "5px 8px", color: "var(--tx-primary)", fontSize: 12, outline: "none" }}
+                      />
+                      <button onClick={() => { if (newFolderName.trim()) { setActiveFolder(newFolderName.trim()); setNewFolderMode(false); setNewFolderName("") } }}
+                        style={{ width: 26, height: 26, borderRadius: 6, background: "#6366f1", border: "none", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Check size={12} />
+                      </button>
+                    </div>
+                  ) : (
+                    <button onClick={() => setNewFolderMode(true)}
+                      style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", borderRadius: 8, background: "transparent", border: "1px dashed rgba(99,102,241,0.2)", color: "var(--tx-faint)", fontSize: 12, cursor: "pointer" }}>
+                      <FolderPlus size={13} /> สร้าง Folder ใหม่
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Template cards */}
+              <div style={{ flex: 1 }}>
+                {templatesInFolder.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "40px 20px", border: "1px dashed var(--bg-border)", borderRadius: 12 }}>
+                    <FolderOpen size={36} color="var(--tx-faint)" style={{ marginBottom: 10 }} />
+                    <div style={{ color: "var(--tx-faint)", fontSize: 13 }}>Folder นี้ยังว่างอยู่</div>
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))", gap: 10 }}>
+                    {templatesInFolder.map(t => {
+                      const color = folderColor(t.folder ?? "ทั่วไป")
+                      return (
+                        <div key={t.id}
+                          style={{ background: "var(--bg-card)", border: "1px solid var(--bg-border)", borderRadius: 14, padding: "14px 16px", position: "relative", transition: "border-color .15s" }}
+                          onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.borderColor = color + "55"}
+                          onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.borderColor = "var(--bg-border)"}>
+
+                          {/* Folder tag */}
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                            <span style={{ fontSize: 10, fontWeight: 700, color, background: color + "18", padding: "2px 8px", borderRadius: 20 }}>
+                              {t.folder ?? "ทั่วไป"}
+                            </span>
+                            {/* Move menu trigger */}
+                            <button onClick={e => { e.stopPropagation(); setMovingId(movingId === t.id ? null : t.id); setMoveTarget("") }}
+                              style={{ width: 24, height: 24, borderRadius: 6, background: "transparent", border: "none", color: "var(--tx-faint)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                              <MoreHorizontal size={13} />
+                            </button>
+                          </div>
+
+                          {/* Move dropdown */}
+                          {movingId === t.id && (
+                            <div style={{ position: "absolute", top: 38, right: 10, zIndex: 100, background: "var(--bg-main)", border: "1px solid var(--bg-border)", borderRadius: 10, padding: 10, minWidth: 180, boxShadow: "0 8px 24px rgba(0,0,0,0.3)" }}
+                              onClick={e => e.stopPropagation()}>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--tx-faint)", marginBottom: 6 }}>ย้ายไป Folder</div>
+                              {allFolders.filter(f => f !== (t.folder ?? "ทั่วไป")).map(f => (
+                                <button key={f} onClick={() => moveToFolder(t.id, f)}
+                                  style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 8px", borderRadius: 6, background: "transparent", border: "none", color: "var(--tx-muted)", fontSize: 13, cursor: "pointer" }}
+                                  onMouseEnter={e => e.currentTarget.style.background = "var(--bg-card-hover)"}
+                                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                                  📁 {f}
+                                </button>
+                              ))}
+                              <div style={{ borderTop: "1px solid var(--bg-border)", marginTop: 6, paddingTop: 6 }}>
+                                <div style={{ display: "flex", gap: 4 }}>
+                                  <input value={moveTarget} onChange={e => setMoveTarget(e.target.value)} placeholder="Folder ใหม่"
+                                    style={{ flex: 1, background: "var(--bg-input)", border: "1px solid var(--bg-border)", borderRadius: 6, padding: "5px 7px", color: "var(--tx-primary)", fontSize: 12, outline: "none" }} />
+                                  <button onClick={() => { if (moveTarget.trim()) moveToFolder(t.id, moveTarget.trim()) }}
+                                    style={{ padding: "5px 10px", background: "#6366f1", border: "none", borderRadius: 6, color: "#fff", fontSize: 12, cursor: "pointer" }}>ย้าย</button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          <div style={{ fontSize: 18, marginBottom: 6 }}>🧩</div>
+                          <div style={{ fontWeight: 700, color: "var(--tx-primary)", fontSize: 14, marginBottom: 4 }}>{t.name}</div>
+                          <div style={{ fontSize: 11, color: "var(--tx-faint)", marginBottom: 12 }}>
+                            {t.variables?.length ?? 0} ตัวแปร · {t.category}
+                          </div>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <button onClick={() => openCustomTemplate(t)}
+                              style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 4, padding: "7px 0", background: color + "15", border: `1px solid ${color}30`, borderRadius: 8, color, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                              ใช้ <ChevronRight size={11} />
+                            </button>
+                            <button onClick={e => deleteCustom(t.id, e)}
+                              style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.12)", color: "#f87171", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                              <Trash2 size={11} />
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* ── Variable Fill Modal ── */}
+      {/* ══════════════════════════════════════════════════════════════
+          BUILT-IN TEMPLATES TAB
+      ══════════════════════════════════════════════════════════════ */}
+      {tab === "builtin" && (
+        <div>
+          {/* Search + Category tabs */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 22, flexWrap: "wrap" }}>
+            <div style={{ position: "relative", flex: "0 0 220px" }}>
+              <Search size={13} color="var(--tx-faint)" style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }} />
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา template…"
+                style={{ ...inputSt, paddingLeft: 30 }}
+                onFocus={e => e.target.style.borderColor = "rgba(99,102,241,0.5)"}
+                onBlur={e => e.target.style.borderColor = "var(--bg-border)"} />
+            </div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {CATS.map(c => (
+                <button key={c.id} onClick={() => setFilter(c.id)}
+                  style={{
+                    padding: "6px 14px", borderRadius: 20, border: "1px solid",
+                    borderColor: filter === c.id ? "#6366f1" : "var(--bg-border)",
+                    background: filter === c.id ? "rgba(99,102,241,0.12)" : "var(--bg-card)",
+                    color: filter === c.id ? "#a5b4fc" : "var(--tx-muted)",
+                    fontSize: 13, cursor: "pointer", fontWeight: filter === c.id ? 600 : 400, transition: ".1s",
+                  }}>
+                  {c.emoji} {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Grid header */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+            <FileText size={14} color="var(--tx-dim)" />
+            <span style={{ fontSize: 14, fontWeight: 700, color: "var(--tx-primary)" }}>
+              {filter === "all" ? `Templates ทั้งหมด (${filtered.length})` :
+               filter === "recommended" ? `⭐ แนะนำสำหรับคุณ (${filtered.length})` :
+               `${activeCat?.emoji} ${activeCat?.label} (${filtered.length})`}
+            </span>
+          </div>
+
+          {filtered.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "60px 20px", color: "var(--tx-faint)" }}>
+              <FileText size={36} style={{ marginBottom: 12 }} />
+              <div>ไม่พบ Template ที่ตรงกับการค้นหา</div>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(234px, 1fr))", gap: 10 }}>
+              {filtered.map(t => (
+                <div key={t.id} onClick={() => openTemplate(t)}
+                  style={{ background: "var(--bg-card)", border: "1px solid var(--bg-border)", borderRadius: 14, padding: "16px 16px 12px", cursor: "pointer", transition: "border-color .15s, transform .1s" }}
+                  onMouseEnter={e => { const el = e.currentTarget as HTMLDivElement; el.style.borderColor = t.color + "55"; el.style.transform = "translateY(-1px)" }}
+                  onMouseLeave={e => { const el = e.currentTarget as HTMLDivElement; el.style.borderColor = "var(--bg-border)"; el.style.transform = "" }}>
+                  <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
+                    <div style={{ width: 34, height: 34, borderRadius: 9, background: t.color + "18", border: `1px solid ${t.color}28`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }}>{t.icon}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, color: "var(--tx-primary)", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</div>
+                      <div style={{ fontSize: 11, color: "var(--tx-faint)" }}>{t.nameEn}</div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--tx-dim)", marginBottom: 10, lineHeight: 1.5 }}>{t.desc}</div>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span style={{ fontSize: 11, color: "var(--tx-faint)" }}>{t.vars.length} ตัวแปร</span>
+                    <span style={{ fontSize: 12, color: t.color, fontWeight: 600, display: "flex", alignItems: "center", gap: 3 }}>ใช้ <ChevronRight size={11} /></span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Variable Fill Modal ─────────────────────────────────────── */}
       {modalOpen && (
         <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
           onClick={e => { if (e.target === e.currentTarget) { setSelected(null); setSelectedCustom(null) } }}>
           <div style={{ background: "var(--bg-main)", border: "1px solid var(--bg-border)", borderRadius: 20, width: "100%", maxWidth: 560, maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
-            {/* Header */}
             <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "18px 22px 14px", borderBottom: "1px solid var(--bg-border)", flexShrink: 0 }}>
               <div style={{ fontSize: 28 }}>{selected?.icon ?? "🧩"}</div>
               <div style={{ flex: 1 }}>
@@ -722,10 +846,9 @@ function TemplatesPage() {
                 <X size={13} />
               </button>
             </div>
-            {/* Form */}
             <div style={{ overflowY: "auto", padding: "18px 22px", flex: 1 }}>
               {activeVars.length === 0 ? (
-                <p style={{ color: "var(--tx-dim)", fontSize: 14 }}>ไม่มีตัวแปรในเทมเพลตนี้ — AI จะสร้างเอกสารจากชื่อ Template ได้เลย</p>
+                <p style={{ color: "var(--tx-dim)", fontSize: 14 }}>AI จะสร้างเอกสารจากชื่อ Template ได้เลย</p>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
                   {activeVars.map(v => (
@@ -751,7 +874,6 @@ function TemplatesPage() {
                 </div>
               )}
             </div>
-            {/* Footer */}
             <div style={{ padding: "14px 22px", borderTop: "1px solid var(--bg-border)", flexShrink: 0, display: "flex", gap: 10 }}>
               <button onClick={() => { setSelected(null); setSelectedCustom(null) }}
                 style={{ flex: 1, padding: "10px 0", background: "var(--bg-card)", border: "1px solid var(--bg-border)", borderRadius: 10, color: "var(--tx-muted)", fontSize: 14, cursor: "pointer" }}>

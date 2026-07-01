@@ -6,6 +6,7 @@ import { X, Sparkles, Search, Upload } from "lucide-react"
 import { useLang } from "@/contexts/LanguageContext"
 
 type TemplateHit = { id: string; name: string; icon: string }
+type UploadState = "idle" | "reading" | "analyzing" | "saving" | "done" | "error"
 
 // Client-side keyword detection (no API call)
 const DETECT_MAP: { id: string; name: string; icon: string; kw: string[] }[] = [
@@ -73,11 +74,17 @@ export default function AICreateDialog({ open, onClose }: Props) {
   const { lang } = useLang()
   const [input, setInput] = useState("")
   const [hit, setHit] = useState<TemplateHit | null>(null)
+  const [uploadState, setUploadState] = useState<UploadState>("idle")
+  const [uploadError, setUploadError] = useState("")
   const inputRef = useRef<HTMLInputElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    if (open) { setInput(""); setHit(null); setTimeout(() => inputRef.current?.focus(), 80) }
+    if (open) {
+      setInput(""); setHit(null)
+      setUploadState("idle"); setUploadError("")
+      setTimeout(() => inputRef.current?.focus(), 80)
+    }
   }, [open])
 
   useEffect(() => {
@@ -92,24 +99,36 @@ export default function AICreateDialog({ open, onClose }: Props) {
   }
 
   async function handleUpload(file: File) {
-    const ext = file.name.split(".").pop()?.toLowerCase()
-    const isPdf = ext === "pdf"
-    const dest = isPdf ? "/pdf" : "/documents"
+    setUploadState("analyzing")
+    setUploadError("")
 
-    // Store file metadata so destination page can show upload UI
-    if (typeof window !== "undefined") {
-      sessionStorage.setItem("pendingUploadName", file.name)
-      sessionStorage.setItem("pendingUploadType", ext ?? "")
-    }
+    const form = new FormData()
+    form.append("file", file)
 
-    // Convert file to base64 and store for destination page
-    const reader = new FileReader()
-    reader.onload = () => {
-      try { sessionStorage.setItem("pendingUploadData", reader.result as string) } catch {}
-      router.push(dest)
-      onClose()
+    try {
+      // Step 1: AI analyzes the document
+      const analyzeRes = await fetch("/api/ai/templates/analyze", { method: "POST", body: form })
+      if (!analyzeRes.ok) {
+        const err = await analyzeRes.json().catch(() => ({}))
+        throw new Error(err.error ?? "วิเคราะห์ไฟล์ไม่ได้")
+      }
+      const { name, category, variables, folder } = await analyzeRes.json()
+
+      setUploadState("saving")
+
+      // Step 2: Save as custom template
+      await fetch("/api/templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, category, variables, folder: folder ?? category ?? "ทั่วไป" }),
+      })
+
+      setUploadState("done")
+      setTimeout(() => { router.push("/templates?section=my"); onClose() }, 600)
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : "เกิดข้อผิดพลาด กรุณาลองใหม่")
+      setUploadState("error")
     }
-    reader.readAsDataURL(file)
   }
 
   function handleGenerate() {
@@ -126,7 +145,37 @@ export default function AICreateDialog({ open, onClose }: Props) {
       style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div style={{ background: "var(--bg-main)", border: "1px solid var(--bg-border)", borderRadius: 22, width: "100%", maxWidth: 520, overflow: "hidden", boxShadow: "0 32px 80px rgba(0,0,0,0.5)" }}>
+      <div style={{ background: "var(--bg-main)", border: "1px solid var(--bg-border)", borderRadius: 22, width: "100%", maxWidth: 520, overflow: "hidden", boxShadow: "0 32px 80px rgba(0,0,0,0.5)", position: "relative" }}>
+
+        {/* Upload analyzing overlay */}
+        {(uploadState === "analyzing" || uploadState === "saving" || uploadState === "done") && (
+          <div style={{ position: "absolute", inset: 0, zIndex: 10, background: "rgba(7,7,15,0.92)", borderRadius: 22, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16 }}>
+            <div style={{ width: 56, height: 56, borderRadius: 16, background: "linear-gradient(135deg,rgba(139,92,246,0.25),rgba(99,102,241,0.15))", border: "1px solid rgba(139,92,246,0.3)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              {uploadState === "done"
+                ? <span style={{ fontSize: 24 }}>✅</span>
+                : <Sparkles size={24} color="#a78bfa" style={{ animation: "spin 1.5s linear infinite" }} />}
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "#e2e8f0", marginBottom: 6 }}>
+                {uploadState === "analyzing" && "AI กำลังวิเคราะห์เอกสาร…"}
+                {uploadState === "saving" && "กำลังบันทึก Template…"}
+                {uploadState === "done" && "สร้าง Template สำเร็จ! ✨"}
+              </div>
+              <div style={{ fontSize: 13, color: "#64748b" }}>
+                {uploadState === "analyzing" && "ตรวจจับโครงสร้าง ตัวแปร และหมวดหมู่"}
+                {uploadState === "saving" && "เพิ่มเข้า My Templates ของคุณ"}
+                {uploadState === "done" && "กำลังพาไปหน้า My Templates…"}
+              </div>
+            </div>
+            {uploadState !== "done" && (
+              <div style={{ display: "flex", gap: 5 }}>
+                {[0,1,2].map(i => (
+                  <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: "#a78bfa", animation: `bounce 1.2s ease-in-out ${i * 0.15}s infinite` }} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "18px 20px 14px", borderBottom: "1px solid var(--bg-border)" }}>
@@ -214,8 +263,18 @@ export default function AICreateDialog({ open, onClose }: Props) {
         </div>
       </div>
 
+      {/* Upload error banner */}
+      {uploadState === "error" && uploadError && (
+        <div style={{ margin: "0 20px 16px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 10, padding: "10px 14px", color: "#f87171", fontSize: 13, display: "flex", gap: 8, alignItems: "center" }}>
+          <span style={{ fontSize: 15 }}>⚠️</span>
+          {uploadError}
+          <button onClick={() => setUploadState("idle")} style={{ marginLeft: "auto", background: "none", border: "none", color: "#f87171", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>ปิด</button>
+        </div>
+      )}
+
       <input ref={fileRef} type="file" accept=".pdf,.docx,.doc" style={{ display: "none" }}
         onChange={e => { const f = e.target.files?.[0]; if (f) { handleUpload(f); e.target.value = "" } }} />
+      <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}@keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-6px)}}`}</style>
     </div>
   )
 }

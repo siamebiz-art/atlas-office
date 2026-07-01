@@ -1,11 +1,24 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import Sidebar from "./Sidebar"
 import Topbar from "./Topbar"
+import { supabase } from "@/lib/supabase"
 
 export default function WorkspaceLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [checked, setChecked] = useState(false)
+  const router = useRouter()
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) router.replace("/sign-in")
+      else setChecked(true)
+    })
+  }, [router])
+
+  if (!checked) return null
 
   return (
     <div style={{ display: "flex", background: "var(--bg-deep)", minHeight: "100vh" }}>

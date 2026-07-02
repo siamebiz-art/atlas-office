@@ -13,21 +13,27 @@ export async function POST(req: NextRequest) {
   const buffer = Buffer.from(bytes)
   const client = getAnthropic()
 
-  const systemPrompt = `คุณเป็นผู้เชี่ยวชาญด้านเอกสารธุรกิจ วิเคราะห์เอกสารที่ได้รับและสร้าง Template
+  const systemPrompt = `คุณเป็นผู้เชี่ยวชาญด้านเอกสารธุรกิจ วิเคราะห์เอกสารที่ได้รับและสร้าง Template พร้อม pre-fill ค่าจริงจากเอกสาร
 
 ระบุ:
 1. ชื่อเอกสาร (ภาษาไทย)
 2. หมวดหมู่: sales | hr | finance | government | legal | general
-3. ชื่อ Folder แนะนำ (ภาษาไทย) สำหรับจัดเก็บ template นี้ เช่น "งานขาย", "HR", "บัญชีการเงิน", "ราชการ", "กฎหมาย", "รายงานโครงการ"
-4. ตัวแปรที่เปลี่ยนได้ (ชื่อ วันที่ จำนวนเงิน บริษัท ฯลฯ) โดยเฉพาะข้อมูลที่จะเปลี่ยนในแต่ละครั้ง
+3. ชื่อ Folder แนะนำ (ภาษาไทย) เช่น "งานขาย", "HR", "บัญชีการเงิน", "ราชการ", "กฎหมาย"
+4. ตัวแปรทุกตัวที่เปลี่ยนได้ พร้อมทั้ง:
+   - label: ชื่อ field ภาษาไทย
+   - key: ชื่อ key ภาษาอังกฤษ camelCase
+   - placeholder: ตัวอย่างทั่วไป (ไม่ใช่ค่าจากเอกสาร)
+   - value: ค่าจริงที่อยู่ในเอกสารนี้ (ถ้ามี ให้ใส่ค่าจริง ถ้าไม่มีให้เป็น "")
+   - multiline: true ถ้าเป็นข้อความยาว
+   - required: true ถ้าจำเป็น
 
-ตอบเป็น JSON เท่านั้น:
+ตอบเป็น JSON เท่านั้น (ไม่มี markdown):
 {
   "name": "ชื่อเอกสาร",
   "category": "sales|hr|finance|government|legal|general",
   "folder": "ชื่อ Folder ภาษาไทย",
   "variables": [
-    {"key": "VariableName", "label": "ชื่อภาษาไทย", "placeholder": "ตัวอย่าง", "multiline": false, "required": true}
+    {"key": "docNo", "label": "เลขที่หนังสือ", "placeholder": "ที่ .../2568", "value": "พิเศษ/2568", "multiline": false, "required": true}
   ]
 }`
 

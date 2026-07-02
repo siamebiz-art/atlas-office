@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabase"
 import AILoadingDots from "@/components/shared/AILoadingDots"
 
 // ── Types ──────────────────────────────────────────────────────────────
-type TVar = { key: string; label: string; placeholder?: string; multiline?: boolean; required?: boolean }
+type TVar = { key: string; label: string; placeholder?: string; value?: string; multiline?: boolean; required?: boolean }
 type Template = {
   id: string; name: string; nameEn: string; cat: string
   icon: string; color: string; desc: string; vars: TVar[]
@@ -458,19 +458,27 @@ function TemplatesPage() {
   }
 
   function openTemplate(t: Template) { setSelected(t); setSelectedCustom(null); setVarValues({}) }
-  function openCustomTemplate(t: CustomTemplate) { setSelectedCustom(t); setSelected(null); setVarValues({}) }
+  function openCustomTemplate(t: CustomTemplate) {
+    setSelectedCustom(t)
+    setSelected(null)
+    // Pre-fill with actual values extracted from the source document
+    const prefilled: Record<string, string> = {}
+    t.variables?.forEach(v => { if (v.value) prefilled[v.key] = v.value })
+    setVarValues(prefilled)
+  }
 
-  async function generate() {
+  async function generate(overrideValues?: Record<string, string>) {
     const name = selected?.name ?? selectedCustom?.name ?? ""
     const vars = selected?.vars ?? selectedCustom?.variables ?? []
-    const missing = vars.filter(v => v.required && !varValues[v.key]?.trim())
+    const vals = overrideValues ?? varValues
+    const missing = vars.filter(v => v.required && !vals[v.key]?.trim())
     if (missing.length) { alert(`กรุณากรอก: ${missing.map(m => m.label).join(", ")}`); return }
 
     setGenerating(true)
     try {
       const res = await fetch("/api/ai/templates/generate", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ templateId: selected?.id ?? "custom", templateName: name, variables: varValues }),
+        body: JSON.stringify({ templateId: selected?.id ?? "custom", templateName: name, variables: vals }),
       })
       const { content, title } = await res.json()
       if (!content) throw new Error()
@@ -487,6 +495,14 @@ function TemplatesPage() {
       if (doc) router.push(`/documents/${doc.id}`)
     } catch { alert("ไม่สามารถสร้างเอกสารได้ กรุณาลองใหม่") }
     finally { setGenerating(false) }
+  }
+
+  async function generateDirect(t: CustomTemplate) {
+    // Generate immediately using values extracted from the source document
+    const prefilled: Record<string, string> = {}
+    t.variables?.forEach(v => { if (v.value) prefilled[v.key] = v.value })
+    setSelectedCustom(t); setSelected(null); setVarValues(prefilled)
+    await generate(prefilled)
   }
 
   async function deleteCustom(id: string, e: React.MouseEvent) {
@@ -738,10 +754,19 @@ function TemplatesPage() {
                           <div style={{ fontSize: 11, color: "var(--tx-faint)", marginBottom: 12 }}>
                             {t.variables?.length ?? 0} ตัวแปร · {t.category}
                           </div>
+                          {/* Has extracted values → show Generate Now */}
+                          {t.variables?.some(v => v.value) && (
+                            <button
+                              onClick={() => generateDirect(t)}
+                              disabled={generating}
+                              style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 0", marginBottom: 6, background: "linear-gradient(135deg,#6366f1,#8b5cf6)", border: "none", borderRadius: 8, color: "#fff", fontSize: 12, fontWeight: 700, cursor: generating ? "not-allowed" : "pointer" }}>
+                              <Sparkles size={12} /> Generate ทันที ⚡
+                            </button>
+                          )}
                           <div style={{ display: "flex", gap: 6 }}>
                             <button onClick={() => openCustomTemplate(t)}
-                              style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 4, padding: "7px 0", background: color + "15", border: `1px solid ${color}30`, borderRadius: 8, color, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                              ใช้ <ChevronRight size={11} />
+                              style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 4, padding: "7px 0", background: color + "15", border: `1px solid ${color}30`, borderRadius: 8, color, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                              แก้ไขก่อน <ChevronRight size={11} />
                             </button>
                             <button onClick={e => deleteCustom(t.id, e)}
                               style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.12)", color: "#f87171", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>

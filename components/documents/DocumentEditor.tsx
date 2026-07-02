@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from "react"
 
@@ -67,8 +67,33 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, Props>(
       onChange(html)
     }, [onChange])
 
-    // Markdown shortcuts
+    // Markdown shortcuts + Tab indent
     function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+      // Tab key — indent like Microsoft Word
+      if (e.key === "Tab") {
+        e.preventDefault()
+        const sel = window.getSelection()
+        if (!sel || !sel.rangeCount) return
+
+        // In a list item: increase/decrease indent level
+        let node: Node | null = sel.getRangeAt(0).startContainer
+        while (node && node !== divRef.current) {
+          if (node.nodeName === "LI") {
+            document.execCommand(e.shiftKey ? "outdent" : "indent")
+            handleInput()
+            return
+          }
+          node = node.parentNode
+        }
+
+        // Regular text: insert tab stop (2 em-spaces ≈ Word's 0.5" default tab)
+        if (!e.shiftKey) {
+          document.execCommand("insertHTML", false, "&emsp;&emsp;")
+        }
+        handleInput()
+        return
+      }
+
       if (e.key === " ") {
         const sel = window.getSelection()
         if (!sel || !sel.rangeCount) return

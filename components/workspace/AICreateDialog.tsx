@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
-import { X, Sparkles, Search, Upload } from "lucide-react"
+import { X, Sparkles, Search, ArrowLeft, FileText, Loader2 } from "lucide-react"
 import { useLang } from "@/contexts/LanguageContext"
 
 type TemplateHit = { id: string; name: string; icon: string }
-type UploadState = "idle" | "reading" | "analyzing" | "saving" | "done" | "error"
+type UploadState = "idle" | "preview" | "analyzing" | "saving" | "done" | "error"
 
 // Client-side keyword detection (no API call)
 const DETECT_MAP: { id: string; name: string; icon: string; kw: string[] }[] = [
@@ -76,6 +76,13 @@ export default function AICreateDialog({ open, onClose }: Props) {
   const [hit, setHit] = useState<TemplateHit | null>(null)
   const [uploadState, setUploadState] = useState<UploadState>("idle")
   const [uploadError, setUploadError] = useState("")
+
+  // Preview state
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [previewObjectUrl, setPreviewObjectUrl] = useState("")
+  const [previewHtml, setPreviewHtml] = useState("")
+  const [previewLoading, setPreviewLoading] = useState(false)
+
   const inputRef = useRef<HTMLInputElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -83,13 +90,26 @@ export default function AICreateDialog({ open, onClose }: Props) {
     if (open) {
       setInput(""); setHit(null)
       setUploadState("idle"); setUploadError("")
+      resetPreview()
       setTimeout(() => inputRef.current?.focus(), 80)
     }
-  }, [open])
+  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Revoke object URL on cleanup
+  useEffect(() => {
+    return () => { if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl) }
+  }, [previewObjectUrl])
 
   useEffect(() => {
     setHit(detectTemplate(input))
   }, [input])
+
+  function resetPreview() {
+    if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl)
+    setSelectedFile(null)
+    setPreviewObjectUrl("")
+    setPreviewHtml("")
+  }
 
   function go(href: string) { router.push(href); onClose() }
 
@@ -98,15 +118,41 @@ export default function AICreateDialog({ open, onClose }: Props) {
     go(opt.href)
   }
 
-  async function handleUpload(file: File) {
+  // Step 1: file selected → show preview, don't analyze yet
+  async function handleFileSelected(file: File) {
+    resetPreview()
+    const url = URL.createObjectURL(file)
+    setSelectedFile(file)
+    setPreviewObjectUrl(url)
+    setUploadState("preview")
+    setUploadError("")
+
+    if (!file.type.includes("pdf")) {
+      setPreviewLoading(true)
+      try {
+        const form = new FormData()
+        form.append("file", file)
+        const res = await fetch("/api/ai/templates/extract", { method: "POST", body: form })
+        if (res.ok) {
+          const { html } = await res.json()
+          setPreviewHtml(html ?? "")
+        }
+      } catch { /* show nothing */ } finally {
+        setPreviewLoading(false)
+      }
+    }
+  }
+
+  // Step 2: user clicks "วิเคราะห์" → run AI
+  async function handleAnalyze() {
+    if (!selectedFile) return
     setUploadState("analyzing")
     setUploadError("")
 
     const form = new FormData()
-    form.append("file", file)
+    form.append("file", selectedFile)
 
     try {
-      // Step 1: AI analyzes the document
       const analyzeRes = await fetch("/api/ai/templates/analyze", { method: "POST", body: form })
       if (!analyzeRes.ok) {
         const err = await analyzeRes.json().catch(() => ({}))
@@ -116,7 +162,6 @@ export default function AICreateDialog({ open, onClose }: Props) {
 
       setUploadState("saving")
 
-      // Step 2: Save as custom template
       const saveRes = await fetch("/api/templates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -128,10 +173,10 @@ export default function AICreateDialog({ open, onClose }: Props) {
       }
 
       setUploadState("done")
-      setTimeout(() => { router.push("/templates?section=my"); onClose() }, 600)
+      setTimeout(() => { router.push("/templates?section=my"); onClose() }, 700)
     } catch (e) {
       setUploadError(e instanceof Error ? e.message : "เกิดข้อผิดพลาด กรุณาลองใหม่")
-      setUploadState("error")
+      setUploadState("preview") // back to preview so user can retry
     }
   }
 
@@ -144,14 +189,21 @@ export default function AICreateDialog({ open, onClose }: Props) {
 
   if (!open) return null
 
+  const isPdf = selectedFile?.type.includes("pdf") ?? false
+
   return (
     <div
       style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div style={{ background: "var(--bg-main)", border: "1px solid var(--bg-border)", borderRadius: 22, width: "100%", maxWidth: 520, overflow: "hidden", boxShadow: "0 32px 80px rgba(0,0,0,0.5)", position: "relative" }}>
+      <div style={{
+        background: "var(--bg-main)", border: "1px solid var(--bg-border)", borderRadius: 22,
+        width: "100%", maxWidth: uploadState === "preview" ? 640 : 520,
+        overflow: "hidden", boxShadow: "0 32px 80px rgba(0,0,0,0.5)", position: "relative",
+        transition: "max-width .2s ease",
+      }}>
 
-        {/* Upload analyzing overlay */}
+        {/* ── Analyzing / Saving / Done overlay ── */}
         {(uploadState === "analyzing" || uploadState === "saving" || uploadState === "done") && (
           <div style={{ position: "absolute", inset: 0, zIndex: 10, background: "rgba(7,7,15,0.92)", borderRadius: 22, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16 }}>
             <div style={{ width: 56, height: 56, borderRadius: 16, background: "linear-gradient(135deg,rgba(139,92,246,0.25),rgba(99,102,241,0.15))", border: "1px solid rgba(139,92,246,0.3)", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -181,103 +233,174 @@ export default function AICreateDialog({ open, onClose }: Props) {
           </div>
         )}
 
-        {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "18px 20px 14px", borderBottom: "1px solid var(--bg-border)" }}>
-          <div style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(135deg,#6366f1,#8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <Sparkles size={14} color="#fff" />
-          </div>
-          <span style={{ fontWeight: 800, fontSize: 15, color: "var(--tx-main)", flex: 1 }}>AI Create</span>
-          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 7, background: "var(--bg-card-hover)", border: "none", color: "var(--tx-muted)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <X size={14} />
-          </button>
-        </div>
-
-        {/* Search / Prompt */}
-        <div style={{ padding: "16px 20px 0" }}>
-          <div style={{ position: "relative" }}>
-            <Search size={14} color="var(--tx-faint)" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
-            <input
-              ref={inputRef}
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter") handleGenerate(); if (e.key === "Escape") onClose() }}
-              placeholder={lang === "th" ? "พิมพ์สิ่งที่ต้องการ เช่น สร้างใบเสนอราคา…" : "Type what you need, e.g. Create a quotation…"}
-              style={{
-                width: "100%", boxSizing: "border-box",
-                background: "var(--bg-input)", border: "1px solid rgba(99,102,241,0.35)",
-                borderRadius: 12, padding: "11px 14px 11px 36px",
-                color: "var(--tx-primary)", fontSize: 14, outline: "none",
-              }}
-              onFocus={e => e.target.style.borderColor = "rgba(99,102,241,0.65)"}
-              onBlur={e => e.target.style.borderColor = "rgba(99,102,241,0.35)"}
-            />
-          </div>
-
-          {/* Template detection banner */}
-          {hit && (
-            <div style={{ marginTop: 12, background: "linear-gradient(135deg, rgba(99,102,241,0.12), rgba(139,92,246,0.08))", border: "1px solid rgba(99,102,241,0.3)", borderRadius: 12, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 }}>
-              <div style={{ fontSize: 22 }}>{hit.icon}</div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 11, color: "#818cf8", fontWeight: 700, marginBottom: 2 }}>✓ {lang === "th" ? "พบ Template" : "Template found"}</div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--tx-primary)" }}>{hit.name}</div>
-              </div>
+        {/* ── Preview state ── */}
+        {uploadState === "preview" && selectedFile ? (
+          <>
+            {/* Preview header */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 18px", borderBottom: "1px solid var(--bg-border)" }}>
               <button
-                onClick={handleGenerate}
-                style={{ padding: "7px 14px", background: "linear-gradient(135deg,#6366f1,#8b5cf6)", border: "none", borderRadius: 8, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}
+                onClick={() => { setUploadState("idle"); resetPreview() }}
+                style={{ width: 28, height: 28, borderRadius: 7, background: "var(--bg-card-hover)", border: "none", color: "var(--tx-muted)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
               >
-                Generate →
+                <ArrowLeft size={14} />
+              </button>
+              <FileText size={16} color="#06b6d4" style={{ flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--tx-main)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selectedFile.name}</div>
+                <div style={{ fontSize: 11, color: "var(--tx-faint)" }}>
+                  {isPdf ? "PDF" : "Word Document"} · {(selectedFile.size / 1024).toFixed(0)} KB
+                </div>
+              </div>
+              <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 7, background: "var(--bg-card-hover)", border: "none", color: "var(--tx-muted)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <X size={14} />
               </button>
             </div>
-          )}
-        </div>
 
-        {/* Divider */}
-        <div style={{ padding: "14px 20px 0" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ flex: 1, height: 1, background: "var(--bg-divider)" }} />
-            <span style={{ fontSize: 11, color: "var(--tx-faint)", fontWeight: 600 }}>{lang === "th" ? "หรือเลือกประเภท" : "or choose a type"}</span>
-            <div style={{ flex: 1, height: 1, background: "var(--bg-divider)" }} />
-          </div>
-        </div>
-
-        {/* Options Grid */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, padding: "12px 20px 20px" }}>
-          {CREATE_OPTIONS.map(opt => (
-            <button
-              key={opt.labelEn}
-              onClick={() => handleOption(opt)}
-              style={{
-                textAlign: "left", background: `${opt.color}0d`, border: `1px solid ${opt.color}22`,
-                borderRadius: 14, padding: "14px 14px 12px", cursor: "pointer", transition: "all .15s",
-                position: "relative",
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = `${opt.color}1e`; e.currentTarget.style.borderColor = `${opt.color}50`; e.currentTarget.style.transform = "translateY(-1px)" }}
-              onMouseLeave={e => { e.currentTarget.style.background = `${opt.color}0d`; e.currentTarget.style.borderColor = `${opt.color}22`; e.currentTarget.style.transform = "" }}
-            >
-              {opt.star && (
-                <span style={{ position: "absolute", top: 8, right: 8, fontSize: 10, fontWeight: 700, color: "#a78bfa", background: "rgba(139,92,246,0.15)", padding: "1px 6px", borderRadius: 8 }}>
-                  ⭐ {lang === "th" ? "นิยม" : "Popular"}
-                </span>
+            {/* Preview content */}
+            <div style={{ height: 420, overflow: "hidden", background: "var(--bg-deep)", position: "relative" }}>
+              {isPdf ? (
+                <iframe
+                  src={previewObjectUrl}
+                  style={{ width: "100%", height: "100%", border: "none", display: "block" }}
+                  title="PDF Preview"
+                />
+              ) : previewLoading ? (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", gap: 10, color: "var(--tx-faint)", fontSize: 13 }}>
+                  <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />
+                  กำลังโหลดเนื้อหา…
+                </div>
+              ) : previewHtml ? (
+                <div
+                  style={{ height: "100%", overflowY: "auto", padding: "24px 32px", color: "var(--tx-primary)", fontSize: 14, lineHeight: 1.9, fontFamily: "'Sarabun','TH Sarabun New',sans-serif" }}
+                  dangerouslySetInnerHTML={{ __html: previewHtml }}
+                />
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 10, color: "var(--tx-faint)" }}>
+                  <FileText size={36} color="#334155" />
+                  <div style={{ fontSize: 13 }}>ไม่พบข้อความในเอกสาร</div>
+                </div>
               )}
-              <div style={{ fontSize: 22, marginBottom: 6 }}>{opt.icon}</div>
-              <div style={{ fontWeight: 700, color: "var(--tx-primary)", fontSize: 13, marginBottom: 2 }}>{lang === "th" ? opt.labelTh : opt.labelEn}</div>
-              <div style={{ fontSize: 11, color: "var(--tx-faint)", lineHeight: 1.4 }}>{lang === "th" ? opt.descTh : opt.descEn}</div>
-            </button>
-          ))}
-        </div>
+            </div>
+
+            {/* Error banner (retry) */}
+            {uploadError && (
+              <div style={{ margin: "0", padding: "10px 18px", background: "rgba(239,68,68,0.08)", borderTop: "1px solid rgba(239,68,68,0.2)", color: "#f87171", fontSize: 12, display: "flex", gap: 8, alignItems: "center" }}>
+                <span>⚠️</span>
+                {uploadError}
+              </div>
+            )}
+
+            {/* Action bar */}
+            <div style={{ padding: "14px 18px", borderTop: "1px solid var(--bg-border)", display: "flex", gap: 10 }}>
+              <button
+                onClick={() => fileRef.current?.click()}
+                style={{ padding: "9px 14px", borderRadius: 10, background: "var(--bg-icon)", border: "1px solid var(--bg-border)", color: "var(--tx-muted)", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+              >
+                เปลี่ยนไฟล์
+              </button>
+              <button
+                onClick={handleAnalyze}
+                style={{ flex: 1, padding: "9px 14px", borderRadius: 10, background: "linear-gradient(135deg,#06b6d4,#0891b2)", border: "none", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, boxShadow: "0 4px 16px rgba(6,182,212,0.3)" }}
+              >
+                <Sparkles size={14} />
+                วิเคราะห์และสร้าง Template
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* ── Normal dialog content ── */}
+
+            {/* Header */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "18px 20px 14px", borderBottom: "1px solid var(--bg-border)" }}>
+              <div style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(135deg,#6366f1,#8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Sparkles size={14} color="#fff" />
+              </div>
+              <span style={{ fontWeight: 800, fontSize: 15, color: "var(--tx-main)", flex: 1 }}>AI Create</span>
+              <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 7, background: "var(--bg-card-hover)", border: "none", color: "var(--tx-muted)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <X size={14} />
+              </button>
+            </div>
+
+            {/* Search / Prompt */}
+            <div style={{ padding: "16px 20px 0" }}>
+              <div style={{ position: "relative" }}>
+                <Search size={14} color="var(--tx-faint)" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
+                <input
+                  ref={inputRef}
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") handleGenerate(); if (e.key === "Escape") onClose() }}
+                  placeholder={lang === "th" ? "พิมพ์สิ่งที่ต้องการ เช่น สร้างใบเสนอราคา…" : "Type what you need, e.g. Create a quotation…"}
+                  style={{
+                    width: "100%", boxSizing: "border-box",
+                    background: "var(--bg-input)", border: "1px solid rgba(99,102,241,0.35)",
+                    borderRadius: 12, padding: "11px 14px 11px 36px",
+                    color: "var(--tx-primary)", fontSize: 14, outline: "none",
+                  }}
+                  onFocus={e => e.target.style.borderColor = "rgba(99,102,241,0.65)"}
+                  onBlur={e => e.target.style.borderColor = "rgba(99,102,241,0.35)"}
+                />
+              </div>
+
+              {/* Template detection banner */}
+              {hit && (
+                <div style={{ marginTop: 12, background: "linear-gradient(135deg, rgba(99,102,241,0.12), rgba(139,92,246,0.08))", border: "1px solid rgba(99,102,241,0.3)", borderRadius: 12, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ fontSize: 22 }}>{hit.icon}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 11, color: "#818cf8", fontWeight: 700, marginBottom: 2 }}>✓ {lang === "th" ? "พบ Template" : "Template found"}</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "var(--tx-primary)" }}>{hit.name}</div>
+                  </div>
+                  <button
+                    onClick={handleGenerate}
+                    style={{ padding: "7px 14px", background: "linear-gradient(135deg,#6366f1,#8b5cf6)", border: "none", borderRadius: 8, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}
+                  >
+                    Generate →
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Divider */}
+            <div style={{ padding: "14px 20px 0" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ flex: 1, height: 1, background: "var(--bg-divider)" }} />
+                <span style={{ fontSize: 11, color: "var(--tx-faint)", fontWeight: 600 }}>{lang === "th" ? "หรือเลือกประเภท" : "or choose a type"}</span>
+                <div style={{ flex: 1, height: 1, background: "var(--bg-divider)" }} />
+              </div>
+            </div>
+
+            {/* Options Grid */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, padding: "12px 20px 20px" }}>
+              {CREATE_OPTIONS.map(opt => (
+                <button
+                  key={opt.labelEn}
+                  onClick={() => handleOption(opt)}
+                  style={{
+                    textAlign: "left", background: `${opt.color}0d`, border: `1px solid ${opt.color}22`,
+                    borderRadius: 14, padding: "14px 14px 12px", cursor: "pointer", transition: "all .15s",
+                    position: "relative",
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = `${opt.color}1e`; e.currentTarget.style.borderColor = `${opt.color}50`; e.currentTarget.style.transform = "translateY(-1px)" }}
+                  onMouseLeave={e => { e.currentTarget.style.background = `${opt.color}0d`; e.currentTarget.style.borderColor = `${opt.color}22`; e.currentTarget.style.transform = "" }}
+                >
+                  {opt.star && (
+                    <span style={{ position: "absolute", top: 8, right: 8, fontSize: 10, fontWeight: 700, color: "#a78bfa", background: "rgba(139,92,246,0.15)", padding: "1px 6px", borderRadius: 8 }}>
+                      ⭐ {lang === "th" ? "นิยม" : "Popular"}
+                    </span>
+                  )}
+                  <div style={{ fontSize: 22, marginBottom: 6 }}>{opt.icon}</div>
+                  <div style={{ fontWeight: 700, color: "var(--tx-primary)", fontSize: 13, marginBottom: 2 }}>{lang === "th" ? opt.labelTh : opt.labelEn}</div>
+                  <div style={{ fontSize: 11, color: "var(--tx-faint)", lineHeight: 1.4 }}>{lang === "th" ? opt.descTh : opt.descEn}</div>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
-      {/* Upload error banner */}
-      {uploadState === "error" && uploadError && (
-        <div style={{ margin: "0 20px 16px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 10, padding: "10px 14px", color: "#f87171", fontSize: 13, display: "flex", gap: 8, alignItems: "center" }}>
-          <span style={{ fontSize: 15 }}>⚠️</span>
-          {uploadError}
-          <button onClick={() => setUploadState("idle")} style={{ marginLeft: "auto", background: "none", border: "none", color: "#f87171", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>ปิด</button>
-        </div>
-      )}
-
       <input ref={fileRef} type="file" accept=".pdf,.docx,.doc" style={{ display: "none" }}
-        onChange={e => { const f = e.target.files?.[0]; if (f) { handleUpload(f); e.target.value = "" } }} />
+        onChange={e => { const f = e.target.files?.[0]; if (f) { handleFileSelected(f); e.target.value = "" } }} />
       <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}@keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-6px)}}`}</style>
     </div>
   )

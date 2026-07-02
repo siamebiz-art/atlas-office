@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef, use } from "react"
 import { useRouter } from "next/navigation"
 import {
   ArrowLeft, Save, CheckCircle, Sparkles, Send, Loader2, Bot,
-  User, Pencil, MoreHorizontal,
+  User, Pencil, MoreHorizontal, BookmarkPlus,
 } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import DocumentEditor, { type DocumentEditorHandle, type SelectionInfo } from "@/components/documents/DocumentEditor"
@@ -45,6 +45,10 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
   const [saving, setSaving] = useState(false)
   const [saved, setSaved]   = useState(false)
   const [editMode, setEditMode] = useState<"ai" | "manual">("ai")
+
+  // Save as Template
+  const [savingTpl, setSavingTpl] = useState(false)
+  const [tplToast, setTplToast] = useState<"success" | "error" | null>(null)
 
   // AI chat panel
   const [messages, setMessages]   = useState<Message[]>([])
@@ -178,6 +182,34 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
     a.click(); URL.revokeObjectURL(url)
   }
 
+  async function saveAsTemplate() {
+    if (!content || savingTpl) return
+    setSavingTpl(true)
+    setTplToast(null)
+    try {
+      const plainText = content.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
+      const analyzeRes = await fetch("/api/ai/templates/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: plainText, name: title }),
+      })
+      if (!analyzeRes.ok) throw new Error()
+      const { name, category, variables, folder } = await analyzeRes.json()
+      const saveRes = await fetch("/api/templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name || title, category, variables, folder: folder ?? category ?? "ทั่วไป" }),
+      })
+      if (!saveRes.ok) throw new Error()
+      setTplToast("success")
+    } catch {
+      setTplToast("error")
+    } finally {
+      setSavingTpl(false)
+      setTimeout(() => setTplToast(null), 3500)
+    }
+  }
+
   function handleEditorChange(html: string) {
     setContent(html)
   }
@@ -230,6 +262,19 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button
+            onClick={saveAsTemplate}
+            disabled={savingTpl || !content}
+            title="บันทึกเป็น Template"
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 9, background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.25)", color: "#c4b5fd", fontSize: 12, fontWeight: 600, cursor: savingTpl || !content ? "not-allowed" : "pointer", opacity: !content ? 0.5 : 1, whiteSpace: "nowrap" }}
+          >
+            {savingTpl
+              ? <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} />
+              : <BookmarkPlus size={12} />}
+            {savingTpl
+              ? (lang === "th" ? "กำลังสร้าง…" : "Creating…")
+              : (lang === "th" ? "บันทึกเป็น Template" : "Save as Template")}
+          </button>
           <ExportMenu onExport={handleExport} />
           <button
             onClick={() => save()}
@@ -417,10 +462,29 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
         />
       )}
 
+      {/* Save-as-Template toast */}
+      {tplToast && (
+        <div style={{
+          position: "fixed", bottom: 28, left: "50%", transform: "translateX(-50%)",
+          padding: "10px 20px", borderRadius: 12, fontSize: 13, fontWeight: 600,
+          display: "flex", alignItems: "center", gap: 8, zIndex: 9999,
+          boxShadow: "0 8px 32px rgba(0,0,0,0.35)",
+          background: tplToast === "success" ? "rgba(16,185,129,0.15)" : "rgba(239,68,68,0.15)",
+          border: `1px solid ${tplToast === "success" ? "rgba(16,185,129,0.4)" : "rgba(239,68,68,0.4)"}`,
+          color: tplToast === "success" ? "#34d399" : "#f87171",
+          animation: "fadeInUp .25s ease",
+        }}>
+          {tplToast === "success"
+            ? <><CheckCircle size={14} /> {lang === "th" ? "บันทึกเป็น Template แล้ว — ดูใน My Templates" : "Saved as Template — view in My Templates"}</>
+            : <>{lang === "th" ? "สร้าง Template ไม่สำเร็จ กรุณาลองอีกครั้ง" : "Failed to create template, please try again"}</>}
+        </div>
+      )}
+
       <style>{`
         @keyframes spin { from{transform:rotate(0)} to{transform:rotate(360deg)} }
         @keyframes aipulse { 0%,100%{opacity:1;box-shadow:0 0 5px #10b981} 50%{opacity:0.5;box-shadow:0 0 10px #10b981} }
         @keyframes dotBounce { from{transform:translateY(0);opacity:.5} to{transform:translateY(-5px);opacity:1} }
+        @keyframes fadeInUp { from{opacity:0;transform:translateX(-50%) translateY(10px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
       `}</style>
     </div>
   )

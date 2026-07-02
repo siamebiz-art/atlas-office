@@ -4,16 +4,7 @@ import type { MessageParam } from "@anthropic-ai/sdk/resources/messages"
 
 export const runtime = "nodejs"
 
-export async function POST(req: NextRequest) {
-  const formData = await req.formData()
-  const file = formData.get("file") as File
-  if (!file) return NextResponse.json({ error: "No file" }, { status: 400 })
-
-  const bytes = await file.arrayBuffer()
-  const buffer = Buffer.from(bytes)
-  const client = getAnthropic()
-
-  const systemPrompt = `คุณเป็นผู้เชี่ยวชาญด้านเอกสารธุรกิจ วิเคราะห์เอกสารที่ได้รับและสร้าง Template พร้อม pre-fill ค่าจริงจากเอกสาร
+const systemPrompt = `คุณเป็นผู้เชี่ยวชาญด้านเอกสารธุรกิจ วิเคราะห์เอกสารที่ได้รับและสร้าง Template พร้อม pre-fill ค่าจริงจากเอกสาร
 
 ระบุ:
 1. ชื่อเอกสาร (ภาษาไทย)
@@ -37,30 +28,63 @@ export async function POST(req: NextRequest) {
   ]
 }`
 
+function parseResponse(text: string) {
+  const match = text.match(/\{[\s\S]*\}/)
+  if (!match) return null
+  const parsed = JSON.parse(match[0])
+  return {
+    name: parsed.name,
+    category: parsed.category,
+    folder: parsed.folder ?? parsed.category ?? "ทั่วไป",
+    variables: parsed.variables ?? [],
+  }
+}
+
+export async function POST(req: NextRequest) {
+  const client = getAnthropic()
+  const contentType = req.headers.get("content-type") ?? ""
+
   let messageContent: MessageParam["content"]
 
-  if (file.type === "application/pdf") {
-    const b64 = buffer.toString("base64")
+  if (contentType.includes("application/json")) {
+    // Direct text from document editor
+    const { text, name } = await req.json()
+    if (!text) return NextResponse.json({ error: "No text" }, { status: 400 })
+    const docHeader = name ? `ชื่อเอกสาร: ${name}\n\n` : ""
     messageContent = [
-      {
-        type: "document" as const,
-        source: { type: "base64" as const, media_type: "application/pdf" as const, data: b64 },
-      },
-      { type: "text" as const, text: "วิเคราะห์เอกสาร PDF นี้และสร้าง Template ตามที่กำหนด" },
+      { type: "text" as const, text: `${docHeader}เนื้อหาเอกสาร:\n${text.slice(0, 8000)}\n\nวิเคราะห์และสร้าง Template` },
     ]
   } else {
-    // DOCX or other text-based files
-    let textContent = ""
-    try {
-      const mammoth = await import("mammoth")
-      const result = await mammoth.extractRawText({ buffer })
-      textContent = result.value
-    } catch {
-      textContent = buffer.toString("utf-8").slice(0, 8000)
+    // FormData file upload
+    const formData = await req.formData()
+    const file = formData.get("file") as File
+    if (!file) return NextResponse.json({ error: "No file" }, { status: 400 })
+
+    const bytes = await file.arrayBuffer()
+    const buffer = Buffer.from(bytes)
+
+    if (file.type === "application/pdf") {
+      const b64 = buffer.toString("base64")
+      messageContent = [
+        {
+          type: "document" as const,
+          source: { type: "base64" as const, media_type: "application/pdf" as const, data: b64 },
+        },
+        { type: "text" as const, text: "วิเคราะห์เอกสาร PDF นี้และสร้าง Template ตามที่กำหนด" },
+      ]
+    } else {
+      let textContent = ""
+      try {
+        const mammoth = await import("mammoth")
+        const result = await mammoth.extractRawText({ buffer })
+        textContent = result.value
+      } catch {
+        textContent = buffer.toString("utf-8").slice(0, 8000)
+      }
+      messageContent = [
+        { type: "text" as const, text: `เนื้อหาเอกสาร:\n${textContent.slice(0, 8000)}\n\nวิเคราะห์และสร้าง Template` },
+      ]
     }
-    messageContent = [
-      { type: "text" as const, text: `เนื้อหาเอกสาร:\n${textContent.slice(0, 8000)}\n\nวิเคราะห์และสร้าง Template` },
-    ]
   }
 
   const msg = await client.messages.create({
@@ -73,16 +97,8 @@ export async function POST(req: NextRequest) {
   const text = msg.content[0].type === "text" ? msg.content[0].text : ""
 
   try {
-    const match = text.match(/\{[\s\S]*\}/)
-    if (match) {
-      const parsed = JSON.parse(match[0])
-      return NextResponse.json({
-        name: parsed.name,
-        category: parsed.category,
-        folder: parsed.folder ?? parsed.category ?? "ทั่วไป",
-        variables: parsed.variables ?? [],
-      })
-    }
+    const result = parseResponse(text)
+    if (result) return NextResponse.json(result)
   } catch { /* fall through */ }
 
   return NextResponse.json({ error: "Cannot parse response" }, { status: 500 })

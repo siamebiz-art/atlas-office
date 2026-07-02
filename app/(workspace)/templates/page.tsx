@@ -14,7 +14,7 @@ type Template = {
 }
 type CustomTemplate = {
   id: string; name: string; category: string; folder: string
-  variables: TVar[]; created_at: string
+  variables: TVar[]; created_at: string; template_content?: string
 }
 
 // ── Built-in template library (42 templates) ──────────────────────────
@@ -444,10 +444,10 @@ function TemplatesPage() {
       fd.append("file", file)
       const res = await fetch("/api/ai/templates/analyze", { method: "POST", body: fd })
       if (!res.ok) throw new Error()
-      const { name, category, variables, folder } = await res.json()
+      const { name, category, variables, folder, template_content } = await res.json()
       await fetch("/api/templates", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, category, variables, folder: folder ?? "ทั่วไป" }),
+        body: JSON.stringify({ name, category, variables, folder: folder ?? "ทั่วไป", template_content }),
       })
       await loadCustomTemplates()
       setTab("my")
@@ -467,15 +467,48 @@ function TemplatesPage() {
     setVarValues(prefilled)
   }
 
+  // Build live preview HTML: filled values highlighted blue, empty ones red
+  function buildPreview(template_content: string, vars: TVar[], vals: Record<string, string>) {
+    let html = template_content
+    vars.forEach(v => {
+      const val = vals[v.key]?.trim()
+      const replacement = val
+        ? `<mark style="background:rgba(99,102,241,0.18);border-radius:3px;padding:0 2px;color:#a5b4fc;font-style:normal">${val}</mark>`
+        : `<mark style="background:rgba(239,68,68,0.1);border-radius:3px;padding:0 2px;color:#f87171;font-size:0.9em">[${v.label}]</mark>`
+      html = html.split(`{{${v.key}}}`).join(replacement)
+    })
+    return html
+  }
+
   async function generate(overrideValues?: Record<string, string>) {
     const name = selected?.name ?? selectedCustom?.name ?? ""
     const vars = selected?.vars ?? selectedCustom?.variables ?? []
     const vals = overrideValues ?? varValues
-    const missing = vars.filter(v => v.required && !vals[v.key]?.trim())
-    if (missing.length) { alert(`กรุณากรอก: ${missing.map(m => m.label).join(", ")}`); return }
 
     setGenerating(true)
     try {
+      // Custom template with stored content → string substitution (no AI)
+      if (selectedCustom?.template_content) {
+        let content = selectedCustom.template_content
+        vars.forEach(v => {
+          const val = vals[v.key]?.trim() || v.value || ""
+          content = content.split(`{{${v.key}}}`).join(val)
+        })
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+        const { data: doc } = await supabase.from("documents").insert({
+          user_id: user.id, title: name, content,
+          doc_type: selectedCustom.category ?? "general",
+          word_count: content.replace(/<[^>]+>/g, " ").split(/\s+/).filter(Boolean).length,
+        }).select().single()
+        if (doc) router.push(`/documents/${doc.id}`)
+        return
+      }
+
+      // Built-in template or legacy custom → AI generation
+      const missing = vars.filter(v => v.required && !vals[v.key]?.trim())
+      if (missing.length) { alert(`กรุณากรอก: ${missing.map(m => m.label).join(", ")}`); setGenerating(false); return }
+
       const res = await fetch("/api/ai/templates/generate", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ templateId: selected?.id ?? "custom", templateName: name, variables: vals }),
@@ -485,22 +518,19 @@ function TemplatesPage() {
 
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-
       const { data: doc } = await supabase.from("documents").insert({
         user_id: user.id, title: title || name, content,
         doc_type: selected?.id ?? "general",
         word_count: content.split(/\s+/).length,
       }).select().single()
-
       if (doc) router.push(`/documents/${doc.id}`)
     } catch { alert("ไม่สามารถสร้างเอกสารได้ กรุณาลองใหม่") }
     finally { setGenerating(false) }
   }
 
   async function generateDirect(t: CustomTemplate) {
-    // Generate immediately using values extracted from the source document
     const prefilled: Record<string, string> = {}
-    t.variables?.forEach(v => { if (v.value) prefilled[v.key] = v.value })
+    t.variables?.forEach(v => { prefilled[v.key] = v.value ?? "" })
     setSelectedCustom(t); setSelected(null); setVarValues(prefilled)
     await generate(prefilled)
   }
@@ -856,68 +886,109 @@ function TemplatesPage() {
       )}
 
       {/* ── Variable Fill Modal ─────────────────────────────────────── */}
-      {modalOpen && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
-          onClick={e => { if (e.target === e.currentTarget) { setSelected(null); setSelectedCustom(null) } }}>
-          <div style={{ background: "var(--bg-main)", border: "1px solid var(--bg-border)", borderRadius: 20, width: "100%", maxWidth: 560, maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "18px 22px 14px", borderBottom: "1px solid var(--bg-border)", flexShrink: 0 }}>
-              <div style={{ fontSize: 28 }}>{selected?.icon ?? "🧩"}</div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 800, color: "var(--tx-main)", fontSize: 16 }}>{selected?.name ?? selectedCustom?.name}</div>
-                {selected && <div style={{ fontSize: 12, color: "var(--tx-faint)" }}>{selected.nameEn}</div>}
-              </div>
-              <button onClick={() => { setSelected(null); setSelectedCustom(null) }}
-                style={{ width: 28, height: 28, borderRadius: 7, background: "var(--bg-card-hover)", border: "none", color: "var(--tx-muted)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <X size={13} />
-              </button>
-            </div>
-            <div style={{ overflowY: "auto", padding: "18px 22px", flex: 1 }}>
-              {activeVars.length === 0 ? (
-                <p style={{ color: "var(--tx-dim)", fontSize: 14 }}>AI จะสร้างเอกสารจากชื่อ Template ได้เลย</p>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
-                  {activeVars.map(v => (
-                    <div key={v.key}>
-                      <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--tx-dim)", marginBottom: 5 }}>
-                        {v.label}{v.required && <span style={{ color: "#f87171", marginLeft: 2 }}>*</span>}
-                      </label>
-                      {v.multiline ? (
-                        <textarea rows={3} value={varValues[v.key] ?? ""} placeholder={v.placeholder ?? ""}
-                          onChange={e => setVarValues(p => ({ ...p, [v.key]: e.target.value }))}
-                          style={{ ...inputSt, resize: "vertical" }}
-                          onFocus={e => e.target.style.borderColor = "rgba(99,102,241,0.5)"}
-                          onBlur={e => e.target.style.borderColor = "var(--bg-border)"} />
-                      ) : (
-                        <input type="text" value={varValues[v.key] ?? ""} placeholder={v.placeholder ?? ""}
-                          onChange={e => setVarValues(p => ({ ...p, [v.key]: e.target.value }))}
-                          style={inputSt}
-                          onFocus={e => e.target.style.borderColor = "rgba(99,102,241,0.5)"}
-                          onBlur={e => e.target.style.borderColor = "var(--bg-border)"} />
-                      )}
-                    </div>
-                  ))}
+      {modalOpen && (() => {
+        const isCustomWithContent = !!selectedCustom?.template_content
+        const previewHtml = isCustomWithContent
+          ? buildPreview(selectedCustom!.template_content!, activeVars, varValues)
+          : null
+
+        return (
+          <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+            onClick={e => { if (e.target === e.currentTarget) { setSelected(null); setSelectedCustom(null) } }}>
+            <div style={{ background: "var(--bg-main)", border: "1px solid var(--bg-border)", borderRadius: 20, width: "100%", maxWidth: isCustomWithContent ? 900 : 560, maxHeight: "92vh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+
+              {/* Header */}
+              <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 22px 14px", borderBottom: "1px solid var(--bg-border)", flexShrink: 0 }}>
+                <div style={{ fontSize: 26 }}>{selected?.icon ?? "🧩"}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 800, color: "var(--tx-main)", fontSize: 15 }}>{selected?.name ?? selectedCustom?.name}</div>
+                  {selected && <div style={{ fontSize: 11, color: "var(--tx-faint)" }}>{selected.nameEn}</div>}
+                  {isCustomWithContent && <div style={{ fontSize: 11, color: "#10b981", fontWeight: 600 }}>✓ Template ต้นแบบ — ใส่ค่าแล้วสร้างทันที ไม่ผ่าน AI</div>}
                 </div>
-              )}
-            </div>
-            <div style={{ padding: "14px 22px", borderTop: "1px solid var(--bg-border)", flexShrink: 0, display: "flex", gap: 10 }}>
-              <button onClick={() => { setSelected(null); setSelectedCustom(null) }}
-                style={{ flex: 1, padding: "10px 0", background: "var(--bg-card)", border: "1px solid var(--bg-border)", borderRadius: 10, color: "var(--tx-muted)", fontSize: 14, cursor: "pointer" }}>
-                ยกเลิก
-              </button>
-              <button onClick={() => generate()} disabled={generating}
-                style={{
-                  flex: 2, padding: "10px 0",
-                  background: generating ? "rgba(99,102,241,0.4)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
-                  border: "none", borderRadius: 10, color: "#fff", fontWeight: 700, fontSize: 14,
-                  cursor: generating ? "not-allowed" : "pointer",
-                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                }}>
-                {generating ? <>⟳ AI กำลังสร้าง…</> : <><Sparkles size={14} /> Generate with AI</>}
-              </button>
+                <button onClick={() => { setSelected(null); setSelectedCustom(null) }}
+                  style={{ width: 28, height: 28, borderRadius: 7, background: "var(--bg-card-hover)", border: "none", color: "var(--tx-muted)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <X size={13} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+
+                {/* Left: variable inputs */}
+                <div style={{ width: isCustomWithContent ? 280 : "100%", flexShrink: 0, overflowY: "auto", padding: "16px 20px", borderRight: isCustomWithContent ? "1px solid var(--bg-border)" : "none" }}>
+                  {activeVars.length === 0 ? (
+                    <p style={{ color: "var(--tx-dim)", fontSize: 14 }}>AI จะสร้างเอกสารจากชื่อ Template ได้เลย</p>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      {isCustomWithContent && (
+                        <div style={{ fontSize: 12, color: "var(--tx-faint)", marginBottom: 4, lineHeight: 1.5 }}>
+                          เปลี่ยนเฉพาะค่าที่ต้องการ — รูปแบบเอกสารคงเดิมทั้งหมด
+                        </div>
+                      )}
+                      {activeVars.map(v => (
+                        <div key={v.key}>
+                          <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--tx-dim)", marginBottom: 4 }}>
+                            {v.label}
+                          </label>
+                          {v.multiline ? (
+                            <textarea rows={3} value={varValues[v.key] ?? ""} placeholder={v.placeholder ?? v.value ?? ""}
+                              onChange={e => setVarValues(p => ({ ...p, [v.key]: e.target.value }))}
+                              style={{ ...inputSt, resize: "vertical", fontSize: 12 }}
+                              onFocus={e => e.target.style.borderColor = "rgba(99,102,241,0.5)"}
+                              onBlur={e => e.target.style.borderColor = "var(--bg-border)"} />
+                          ) : (
+                            <input type="text" value={varValues[v.key] ?? ""} placeholder={v.placeholder ?? v.value ?? ""}
+                              onChange={e => setVarValues(p => ({ ...p, [v.key]: e.target.value }))}
+                              style={{ ...inputSt, fontSize: 12 }}
+                              onFocus={e => e.target.style.borderColor = "rgba(99,102,241,0.5)"}
+                              onBlur={e => e.target.style.borderColor = "var(--bg-border)"} />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Right: live preview (custom templates only) */}
+                {isCustomWithContent && previewHtml && (
+                  <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px", background: "var(--bg-deep)" }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "var(--tx-faint)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>
+                      ตัวอย่างเอกสาร (live preview)
+                    </div>
+                    <div
+                      style={{ fontSize: 13.5, lineHeight: 2.0, color: "var(--tx-primary)", fontFamily: "'Sarabun','TH Sarabun New',sans-serif" }}
+                      dangerouslySetInnerHTML={{ __html: previewHtml }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div style={{ padding: "12px 22px", borderTop: "1px solid var(--bg-border)", flexShrink: 0, display: "flex", gap: 10 }}>
+                <button onClick={() => { setSelected(null); setSelectedCustom(null) }}
+                  style={{ flex: 1, padding: "9px 0", background: "var(--bg-card)", border: "1px solid var(--bg-border)", borderRadius: 10, color: "var(--tx-muted)", fontSize: 13, cursor: "pointer" }}>
+                  ยกเลิก
+                </button>
+                <button onClick={() => generate()} disabled={generating}
+                  style={{
+                    flex: 2, padding: "9px 0",
+                    background: generating ? "rgba(99,102,241,0.4)" : isCustomWithContent ? "linear-gradient(135deg,#10b981,#059669)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
+                    border: "none", borderRadius: 10, color: "#fff", fontWeight: 700, fontSize: 13,
+                    cursor: generating ? "not-allowed" : "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                  }}>
+                  {generating
+                    ? <>⟳ กำลังสร้าง…</>
+                    : isCustomWithContent
+                      ? <><Check size={14} /> สร้างเอกสาร</>
+                      : <><Sparkles size={14} /> Generate with AI</>
+                  }
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
     </div>
   )
 }

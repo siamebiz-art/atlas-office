@@ -4,27 +4,30 @@ import type { MessageParam } from "@anthropic-ai/sdk/resources/messages"
 
 export const runtime = "nodejs"
 
-const systemPrompt = `คุณเป็นผู้เชี่ยวชาญด้านเอกสารธุรกิจ วิเคราะห์เอกสารที่ได้รับและสร้าง Template พร้อม pre-fill ค่าจริงจากเอกสาร
+const systemPrompt = `คุณเป็นระบบสร้าง Template เอกสาร
 
-ระบุ:
-1. ชื่อเอกสาร (ภาษาไทย)
-2. หมวดหมู่: sales | hr | finance | government | legal | general
-3. ชื่อ Folder แนะนำ (ภาษาไทย) เช่น "งานขาย", "HR", "บัญชีการเงิน", "ราชการ", "กฎหมาย"
-4. ตัวแปรทุกตัวที่เปลี่ยนได้ พร้อมทั้ง:
-   - label: ชื่อ field ภาษาไทย
-   - key: ชื่อ key ภาษาอังกฤษ camelCase
-   - placeholder: ตัวอย่างทั่วไป (ไม่ใช่ค่าจากเอกสาร)
-   - value: ค่าจริงที่อยู่ในเอกสารนี้ (ถ้ามี ให้ใส่ค่าจริง ถ้าไม่มีให้เป็น "")
-   - multiline: true ถ้าเป็นข้อความยาว
-   - required: true ถ้าจำเป็น
+งานของคุณ:
+1. อ่านเอกสารต้นแบบที่ได้รับ
+2. คัดลอกเนื้อหาทั้งหมดออกมา "เหมือนกันทุกตัวอักษร" แต่แทนที่เฉพาะค่าที่เปลี่ยนได้ด้วย {{key}}
+3. ห้ามเปลี่ยนรูปแบบ ลำดับ หรือเนื้อหาอื่นใด — คัดลอกทุกอย่างไว้ตามเดิม
+
+ค่าที่เปลี่ยนได้ คือ: ชื่อบุคคล/บริษัท, วันที่, เลขที่เอกสาร, จำนวนเงิน, ที่อยู่, ตำแหน่ง, รายละเอียดเฉพาะ
+ค่าที่ไม่ควรเปลี่ยน คือ: คำขึ้นต้น/ลงท้ายแบบมาตรฐาน, หัวกระดาษบริษัท (ถ้าเป็นข้อมูลบริษัทเจ้าของ), คำที่ปรากฏในทุกฉบับ
+
+ตัวอย่าง:
+เอกสารจริง: "เรียน บริษัท ABC จำกัด ขอแจ้งราคา จำนวน 10,000 บาท วันที่ 1 มกราคม 2568"
+template_content: "เรียน {{recipientName}} ขอแจ้งราคา จำนวน {{amount}} บาท วันที่ {{date}}"
 
 ตอบเป็น JSON เท่านั้น (ไม่มี markdown):
 {
-  "name": "ชื่อเอกสาร",
+  "name": "ชื่อเอกสาร (ภาษาไทย)",
   "category": "sales|hr|finance|government|legal|general",
-  "folder": "ชื่อ Folder ภาษาไทย",
+  "folder": "ชื่อ Folder ภาษาไทย เช่น งานขาย, HR, ราชการ",
+  "template_content": "เนื้อหาเอกสารทั้งหมด คงรูปแบบเดิม ใส่ {{key}} ตรงค่าที่เปลี่ยนได้",
   "variables": [
-    {"key": "docNo", "label": "เลขที่หนังสือ", "placeholder": "ที่ .../2568", "value": "พิเศษ/2568", "multiline": false, "required": true}
+    {"key": "recipientName", "label": "ชื่อผู้รับ", "value": "บริษัท ABC จำกัด"},
+    {"key": "amount", "label": "จำนวนเงิน", "value": "10,000"},
+    {"key": "date", "label": "วันที่", "value": "1 มกราคม 2568"}
   ]
 }`
 
@@ -33,10 +36,15 @@ function parseResponse(text: string) {
   if (!match) return null
   const parsed = JSON.parse(match[0])
   return {
-    name: parsed.name,
-    category: parsed.category,
+    name: parsed.name ?? "",
+    category: parsed.category ?? "general",
     folder: parsed.folder ?? parsed.category ?? "ทั่วไป",
-    variables: parsed.variables ?? [],
+    template_content: parsed.template_content ?? "",
+    variables: (parsed.variables ?? []).map((v: Record<string, unknown>) => ({
+      key: v.key,
+      label: v.label,
+      value: v.value ?? "",
+    })),
   }
 }
 
@@ -52,44 +60,44 @@ export async function POST(req: NextRequest) {
     if (!text) return NextResponse.json({ error: "No text" }, { status: 400 })
     const docHeader = name ? `ชื่อเอกสาร: ${name}\n\n` : ""
     messageContent = [
-      { type: "text" as const, text: `${docHeader}เนื้อหาเอกสาร:\n${text.slice(0, 8000)}\n\nวิเคราะห์และสร้าง Template` },
+      { type: "text" as const, text: `${docHeader}เนื้อหาเอกสาร:\n${text.slice(0, 8000)}\n\nสร้าง Template โดยคงเนื้อหาทั้งหมดไว้ แค่ระบุ {{key}} ตรงค่าที่เปลี่ยนได้` },
     ]
   } else {
-    // FormData file upload
     const formData = await req.formData()
     const file = formData.get("file") as File
     if (!file) return NextResponse.json({ error: "No file" }, { status: 400 })
 
     const bytes = await file.arrayBuffer()
     const buffer = Buffer.from(bytes)
+    const isPdf = file.type.includes("pdf") || file.name.toLowerCase().endsWith(".pdf")
 
-    if (file.type === "application/pdf") {
+    if (isPdf) {
       const b64 = buffer.toString("base64")
       messageContent = [
         {
           type: "document" as const,
           source: { type: "base64" as const, media_type: "application/pdf" as const, data: b64 },
         },
-        { type: "text" as const, text: "วิเคราะห์เอกสาร PDF นี้และสร้าง Template ตามที่กำหนด" },
+        { type: "text" as const, text: "สร้าง Template โดยคงเนื้อหาทั้งหมดไว้ แค่ระบุ {{key}} ตรงค่าที่เปลี่ยนได้" },
       ]
     } else {
       let textContent = ""
       try {
         const mammoth = await import("mammoth")
-        const result = await mammoth.extractRawText({ buffer })
+        const result = await mammoth.convertToHtml({ buffer })
         textContent = result.value
       } catch {
         textContent = buffer.toString("utf-8").slice(0, 8000)
       }
       messageContent = [
-        { type: "text" as const, text: `เนื้อหาเอกสาร:\n${textContent.slice(0, 8000)}\n\nวิเคราะห์และสร้าง Template` },
+        { type: "text" as const, text: `เนื้อหาเอกสาร (HTML):\n${textContent.slice(0, 8000)}\n\nสร้าง Template โดยคงรูปแบบ HTML ไว้ทั้งหมด แค่ระบุ {{key}} ตรงค่าที่เปลี่ยนได้` },
       ]
     }
   }
 
   const msg = await client.messages.create({
     model: CLAUDE_MODEL,
-    max_tokens: 2048,
+    max_tokens: 4096,
     system: systemPrompt,
     messages: [{ role: "user", content: messageContent }],
   })

@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const body = await req.json()
-  const { name, category, variables, folder } = body
+  const { name, category, variables, folder, template_content } = body
 
   const { data, error } = await supabase
     .from("custom_templates")
@@ -33,6 +33,7 @@ export async function POST(req: NextRequest) {
       category: category ?? "general",
       variables: variables ?? [],
       folder: folder ?? "ทั่วไป",
+      template_content: template_content ?? null,
     })
     .select()
     .single()

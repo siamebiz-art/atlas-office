@@ -156,14 +156,14 @@ export default function AICreateDialog({ open, onClose }: Props) {
         const err = await analyzeRes.json().catch(() => ({}))
         throw new Error(err.error ?? "วิเคราะห์ไฟล์ไม่ได้")
       }
-      const { name, category, variables, folder } = await analyzeRes.json()
+      const { name, category, variables, folder, template_content } = await analyzeRes.json()
 
       setUploadState("saving")
 
       const saveRes = await fetch("/api/templates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, category, variables, folder: folder ?? category ?? "ทั่วไป" }),
+        body: JSON.stringify({ name, category, variables, folder: folder ?? category ?? "ทั่วไป", template_content }),
       })
       if (!saveRes.ok) {
         const err = await saveRes.json().catch(() => ({}))

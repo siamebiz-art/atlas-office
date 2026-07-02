@@ -904,7 +904,7 @@ function TemplatesPage() {
                 style={{ flex: 1, padding: "10px 0", background: "var(--bg-card)", border: "1px solid var(--bg-border)", borderRadius: 10, color: "var(--tx-muted)", fontSize: 14, cursor: "pointer" }}>
                 ยกเลิก
               </button>
-              <button onClick={generate} disabled={generating}
+              <button onClick={() => generate()} disabled={generating}
                 style={{
                   flex: 2, padding: "10px 0",
                   background: generating ? "rgba(99,102,241,0.4)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",

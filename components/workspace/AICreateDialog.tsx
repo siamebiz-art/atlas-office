@@ -119,27 +119,25 @@ export default function AICreateDialog({ open, onClose }: Props) {
   }
 
   // Step 1: file selected → show preview, don't analyze yet
-  async function handleFileSelected(file: File) {
-    resetPreview()
+  function handleFileSelected(file: File) {
+    if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl)
     const url = URL.createObjectURL(file)
+    const pdf = file.type.includes("pdf") || file.name.toLowerCase().endsWith(".pdf")
+
     setSelectedFile(file)
     setPreviewObjectUrl(url)
     setUploadState("preview")
     setUploadError("")
+    setPreviewHtml("")
+    setPreviewLoading(!pdf)
 
-    if (!file.type.includes("pdf")) {
-      setPreviewLoading(true)
-      try {
-        const form = new FormData()
-        form.append("file", file)
-        const res = await fetch("/api/ai/templates/extract", { method: "POST", body: form })
-        if (res.ok) {
-          const { html } = await res.json()
-          setPreviewHtml(html ?? "")
-        }
-      } catch { /* show nothing */ } finally {
-        setPreviewLoading(false)
-      }
+    if (!pdf) {
+      const form = new FormData()
+      form.append("file", file)
+      fetch("/api/ai/templates/extract", { method: "POST", body: form })
+        .then(res => res.ok ? res.json() : { html: "" })
+        .then(data => { setPreviewHtml(data.html ?? ""); setPreviewLoading(false) })
+        .catch(() => setPreviewLoading(false))
     }
   }
 
@@ -189,7 +187,7 @@ export default function AICreateDialog({ open, onClose }: Props) {
 
   if (!open) return null
 
-  const isPdf = selectedFile?.type.includes("pdf") ?? false
+  const isPdf = !!(selectedFile && (selectedFile.type.includes("pdf") || selectedFile.name.toLowerCase().endsWith(".pdf")))
 
   return (
     <div

@@ -8,7 +8,8 @@ export async function POST(req: NextRequest) {
   const file = formData.get("file") as File
   if (!file) return NextResponse.json({ error: "No file" }, { status: 400 })
 
-  if (file.type === "application/pdf") {
+  const isPdf = file.type.includes("pdf") || file.name.toLowerCase().endsWith(".pdf")
+  if (isPdf) {
     return NextResponse.json({ isPdf: true, html: "", text: "" })
   }
 
